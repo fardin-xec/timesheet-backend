@@ -68,7 +68,7 @@ import { EmailModule } from './email/email.module';
         Payslip,
         TaxRegime
       ],
-      synchronize: true,
+      // synchronize: true,
     }),
     WinstonModule.forRoot({
       transports: [
