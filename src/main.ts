@@ -3,6 +3,7 @@ import { AppModule } from './app.module';
 import { ConfigService } from '@nestjs/config';
 import { HttpExceptionFilter } from './filters/http-exception.filter';
 import { TypeORMError } from 'typeorm/error/TypeORMError';
+
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
@@ -18,22 +19,18 @@ async function bootstrap() {
   // Apply the global exception filter
   app.useGlobalFilters(new HttpExceptionFilter());
 
- 
-
-    try {
-        // Start the application
-        await app.listen(port);
-        console.log(`Application is running on: http://localhost:${port}`);
-    } catch (error) {
-
-        console.error('Database connection error:', error);
-      if (error instanceof TypeORMError) {
-
-        console.error('Database connection error:', error.message);
-      }
-      process.exit(1);
+  try {
+    // Start the application - listen on all interfaces (0.0.0.0)
+    await app.listen(port, '0.0.0.0');
+    console.log(`Application is running on: http://0.0.0.0:${port}`);
+    console.log(`Access health check at: http://your-public-ip:${port}/health`);
+  } catch (error) {
+    console.error('Application startup error:', error);
+    if (error instanceof TypeORMError) {
+      console.error('Database connection error:', error.message);
     }
-  
+    process.exit(1);
+  }
 }
 
 bootstrap();
