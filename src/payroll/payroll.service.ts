@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException, Logger, HttpException, HttpStatus } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between, LessThanOrEqual, MoreThanOrEqual } from 'typeorm';
-import { Cron } from '@nestjs/schedule';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import { Payroll, PayrollStatus } from '../entities/payrolls.entity';
 import { Payslip } from '../entities/payslips.entity';
 import { Employee, EmployeeStatus } from '../entities/employees.entity';
@@ -39,7 +39,7 @@ export class PayrollService {
     private pdfService: PdfService,
   ) {}
 
-  @Cron("0 0 4 L * ?", {
+  @Cron(CronExpression.EVERY_1ST_DAY_OF_MONTH_AT_MIDNIGHT, {
     name: 'monthlyPayrollGeneration',
     timeZone: 'UTC',
   })

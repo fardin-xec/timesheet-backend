@@ -33,6 +33,7 @@ import { Payroll } from './entities/payrolls.entity';
 import { Payslip } from './entities/payslips.entity';
 import { TaxRegime } from './entities/tax-regime.entity';
 import { EmailModule } from './email/email.module';
+import { HealthModule } from './health/health.module';
 
 @Module({
   imports: [
@@ -84,7 +85,8 @@ import { EmailModule } from './email/email.module';
     LeaveManagementModule,
     AttendanceModule,
     PayrollModule,
-    EmailModule
+    EmailModule,
+    HealthModule
   ],
 })
 export class AppModule {}
