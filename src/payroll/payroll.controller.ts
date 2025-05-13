@@ -1,4 +1,4 @@
-import { Controller, Post, Param, Patch, Body, Get, Res, Query, ParseIntPipe, HttpException, HttpStatus, UseGuards, DefaultValuePipe, StreamableFile } from '@nestjs/common';
+import { Controller, Post, Param, Patch, Body, Get,Delete, Res, Query, ParseIntPipe, HttpException, HttpStatus, UseGuards, DefaultValuePipe, StreamableFile } from '@nestjs/common';
 import { PayrollService } from './payroll.service';
 import { UpdatePayrollDto } from './dto/update-payroll.dto';
 import { Response } from 'express';
@@ -153,5 +153,16 @@ export class PayrollController {
       console.error('Controller error downloading payslip:', error);
       throw new HttpException('Failed to download payslip', HttpStatus.INTERNAL_SERVER_ERROR);
     }
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Delete(':id')
+  @ApiOperation({ summary: 'Delete payroll record' })
+  @ApiParam({ name: 'id', type: Number })
+  @ApiResponse({ status: 204, description: 'Payroll record deleted successfully' })
+  @ApiResponse({ status: 404, description: 'Payroll not found' })
+  async deletePayroll(@Param('id', ParseIntPipe) id: number, @Res() res: Response) {
+    await this.payrollService.deletePayroll(id);
+    return res.status(HttpStatus.NO_CONTENT).send();
   }
 }

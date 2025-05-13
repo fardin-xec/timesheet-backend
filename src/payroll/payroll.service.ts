@@ -429,4 +429,57 @@ export class PayrollService {
       );
     }
   }
+  async deletePayroll(id: number): Promise<void> {
+    try {
+      const payroll = await this.payrollRepository.findOne({ where: { id } });
+      if (!payroll) {
+        throw new NotFoundException('Payroll not found');
+      }
+  
+      // First check if there's an associated payslip
+      const payslip = await this.payslipRepository.findOne({ where: { payrollId: id } });
+      if (payslip) {
+        // Extract the S3 key from the pdfUrl
+        const key = payslip.pdfUrl.split('/').slice(-2).join('/');
+        if (key) {
+          // Initialize S3 client
+          const s3 = new S3({
+            region: process.env.AWS_REGION,
+            accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+            secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+          });
+  
+          // Delete from S3
+          try {
+            await s3.deleteObject({
+              Bucket: process.env.S3_BUCKET,
+              Key: key,
+            }).promise();
+            this.logger.log(`Deleted payslip PDF from S3: ${key}`);
+            
+            // Remove from cache if exists
+            if (presignedUrlCache.has(key)) {
+              presignedUrlCache.delete(key);
+            }
+          } catch (s3Error) {
+            this.logger.error(`Failed to delete payslip PDF from S3: ${s3Error.message}`, s3Error.stack);
+            // Continue with deletion even if S3 deletion fails
+          }
+          
+          // Delete the payslip record
+          await this.payslipRepository.delete(payslip.id);
+        }
+      }
+  
+      // Delete the payroll record
+      await this.payrollRepository.delete(id);
+      this.logger.log(`Payroll with ID ${id} has been deleted`);
+    } catch (error) {
+      this.logger.error(`Service error deleting payroll: ${error.message}`, error.stack);
+      throw new HttpException(
+        error.message || 'Failed to delete payroll',
+        error instanceof NotFoundException ? HttpStatus.NOT_FOUND : HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
 }
