@@ -11,6 +11,7 @@ export class BankInfoService {
   ) {}
 
   async create(BankInfo: BankInfo): Promise<BankInfo> {
+
     
     
     // If marking as primary, unset any existing primary accounts for this employee
@@ -20,8 +21,21 @@ export class BankInfoService {
         { isPrimary: false }
       );
     }
+
+    const bankInfoData: Partial<BankInfo> = {
+      bankName: BankInfo.bankName,
+      accountHolderName:BankInfo.accountHolderName,
+      branchName: BankInfo.branchName,
+      city: BankInfo.city,
+      ifscCode: BankInfo.ifscCode,
+      accountNo: BankInfo.accountNo,
+      employeeId:BankInfo.employeeId,
+    };
     
-    const bankInfo = this.bankInfoRepository.create(BankInfo);
+    console.log(bankInfoData);
+    
+    
+    const bankInfo = this.bankInfoRepository.create(bankInfoData);
     return this.bankInfoRepository.save(bankInfo);
   }
 
@@ -31,8 +45,8 @@ export class BankInfoService {
     });
   }
 
-  async findByEmployeeId(employeeId: number): Promise<BankInfo[]> {
-    return this.bankInfoRepository.find({
+  async findByEmployeeId(employeeId: number): Promise<BankInfo> {
+    return this.bankInfoRepository.findOne({
       where: { employeeId },
       relations: ['employee'],
     });

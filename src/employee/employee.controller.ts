@@ -5,12 +5,18 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { ResponseDto } from '../dto/response.dto';
 import { UsersService } from 'src/user/user.service';
 import { UserRole } from '../entities/users.entity';
+import { BankInfoService } from 'src/bank-info/bank-info.service';
 
 @Controller('employees')
 export class EmployeeController {
   constructor(
     private readonly employeeService: EmployeeService,
-    private readonly UsersService: UsersService) 
+    private readonly UsersService: UsersService,
+    private readonly bankInfoService: BankInfoService,
+
+
+  ) 
+
     {}
 
     @UseGuards(JwtAuthGuard)
@@ -92,8 +98,7 @@ export class EmployeeController {
   @Post()
   async create(@Body() employeeData: Partial<Employee>): Promise<ResponseDto<Employee>> {
     try {
-      console.log(employeeData);
-      
+
       // Step 1: Prepare user data
       const password = employeeData.firstName+"@12345"; // Hash the password
       const userData = {
@@ -112,6 +117,12 @@ export class EmployeeController {
         ...employeeData,
         userId: user.id, // Assuming the user ID is needed to link the employee to the user
       });
+
+      if(data.id){
+        employeeData.bankAccounts.employeeId=data.id
+        const bank=this.bankInfoService.create(employeeData.bankAccounts)
+        
+      }
     
       return new ResponseDto(HttpStatus.CREATED, 'Employee created successfully', data);
     } catch (error) {

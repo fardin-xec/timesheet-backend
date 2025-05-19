@@ -27,6 +27,7 @@ export class EmployeeService {
 
   async create(employeeData: Partial<Employee>): Promise<Employee> {
     const employee = this.employeeRepository.create(employeeData);
+   
     return this.employeeRepository.save(employee);
   }
 
@@ -38,10 +39,20 @@ export class EmployeeService {
   async remove(id: number): Promise<void> {
     const employee=await this.findOne(id);
     if(employee!==null){
-      await this.personalService.remove(employee.personalInfo.id);
-      await this.bankInfoService.remove(employee.bankAccounts.employeeId);
-      await this.userService.remove(employee.userId);
+
+      const personal=await this.personalService.findEmployeeOne(employee.id)
+      if(personal){
+        await this.personalService.remove(personal.id);
+      }
+      const bankInfo=await this.bankInfoService.findByEmployeeId(employee.id)
+      
+      if(bankInfo){
+        await this.bankInfoService.remove(employee.id);
+      }
+
       await this.employeeRepository.delete(id);
+      await this.userService.remove(employee.userId);
+
     }
    
 

@@ -18,10 +18,10 @@ export class UsersService {
     // Check if username or email already exists
     const existingUser = await this.usersRepository.findOne({
       where: [
-        { username: User.username },
         { email: User.email },
       ],
     });
+    
 
     if (existingUser) {
       throw new BadRequestException('Username or email already exists');

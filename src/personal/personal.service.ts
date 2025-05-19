@@ -45,6 +45,15 @@ export class PersonalService {
     return personal;
   }
 
+  async findEmployeeOne(employeeId: number): Promise<Personal> {
+    const personal = await this.personalRepository.findOne({
+      where: { employeeId },
+      relations: ['employee'],
+    });
+    
+    return personal;
+  }
+
   async update(employeeId: number, updatePersonalDto: CreatePersonalDto): Promise<Personal> {
     try {
       // Get existing record
