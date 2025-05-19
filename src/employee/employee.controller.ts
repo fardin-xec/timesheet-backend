@@ -4,7 +4,7 @@ import { Employee } from '../entities/employees.entity';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { ResponseDto } from '../dto/response.dto';
 import { UsersService } from 'src/user/user.service';
-import { UserRole } from '../entities/users.entity';
+import { User, UserRole } from '../entities/users.entity';
 import { BankInfoService } from 'src/bank-info/bank-info.service';
 
 @Controller('employees')
@@ -149,6 +149,14 @@ export class EmployeeController {
     return new ResponseDto(HttpStatus.OK, 'Employee deleted successfully');
   }
 
- 
+  @UseGuards(JwtAuthGuard)
+  @Put('/user/:id')
+  async updateUser(@Param('id') id: string, @Body() userData: Partial<User>): Promise<ResponseDto<User>> {
+    const data = await this.UsersService.update(+id, userData);
+    if (!data) {
+      return new ResponseDto(HttpStatus.NOT_FOUND, 'User not found');
+    }
+    return new ResponseDto(HttpStatus.OK, 'User updated successfully', data);
+  }
 
 }

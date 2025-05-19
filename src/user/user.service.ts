@@ -79,7 +79,7 @@ export class UsersService {
     return user;
   }
 
-  async update(id: number, User: User): Promise<User> {
+  async update(id: number, User: Partial<User>): Promise<User> {
     const user = await this.findOne(id); // Check if exists
 
     // Hash password if provided
