@@ -8,6 +8,12 @@ import { TokenController } from './token.controller';
 import { User} from '../entities/users.entity';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { OtpController } from './otp.controller';
+import { OtpService } from './otp.sevice';
+import { EmailModule } from 'src/email/email.module';
+import { UsersModule } from 'src/user/user.module';
+import { AttendanceModule } from 'src/attendance/attendance.module';
+import { Attendance } from 'src/entities/attendances.entity';
 
 @Module({
   imports: [
@@ -20,9 +26,12 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
       }),
       inject: [ConfigService],
     }),
-    TypeOrmModule.forFeature([User]),
+    TypeOrmModule.forFeature([User,Attendance]),
+    EmailModule,
+    UsersModule,
+    
   ],
-  providers: [AuthService, JwtStrategy],
-  controllers: [AuthController, TokenController],
+  providers: [AuthService, JwtStrategy,OtpService],
+  controllers: [AuthController, TokenController,OtpController],
 })
 export class AuthModule {}

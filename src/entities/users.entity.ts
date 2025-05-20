@@ -31,6 +31,15 @@ export class User {
   })
   role: UserRole;
 
+  @Column({ name: 'otp', length: 6, nullable: true })
+  otp: string;
+
+  @Column({ name: 'otp_expires_at', type: 'timestamp', nullable: true })
+  otpExpiresAt: Date;
+
+  @Column({ name: 'otp_attempts', default: 0 })
+  otpAttempts: number;
+
   @Column({ name: 'org_id', nullable: true })
   orgId: number;
 

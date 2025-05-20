@@ -7,6 +7,11 @@ import { UsersService } from 'src/user/user.service';
 import { User, UserRole } from '../entities/users.entity';
 import { BankInfoService } from 'src/bank-info/bank-info.service';
 
+class passwordUpdateDto {
+  oldPassword: string;
+  newPassword: string;
+}
+
 @Controller('employees')
 export class EmployeeController {
   constructor(
@@ -151,8 +156,10 @@ export class EmployeeController {
 
   @UseGuards(JwtAuthGuard)
   @Put('/user/:id')
-  async updateUser(@Param('id') id: string, @Body() userData: Partial<User>): Promise<ResponseDto<User>> {
-    const data = await this.UsersService.update(+id, userData);
+  async updateUser(@Param('id') id: string, @Body() userData:  passwordUpdateDto) {
+    console.log(userData);
+    
+    const data = await this.UsersService.updatePassword(+id, userData.oldPassword,userData.newPassword);
     if (!data) {
       return new ResponseDto(HttpStatus.NOT_FOUND, 'User not found');
     }
