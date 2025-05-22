@@ -212,6 +212,8 @@ export class PdfService {
 
   private drawEmployeeInfo(doc: any, employee: Employee, payroll: Payroll, yPosition: number): void {
     // Create a light blue background box for employee info
+    const BankInfo=employee.bankAccounts[0];
+    
     doc.rect(50, yPosition, doc.page.width - 100, 60)
        .fillAndStroke(this.colors.light, this.colors.mediumGray);
     
@@ -232,8 +234,8 @@ export class PdfService {
        .text('Payment Details', doc.page.width / 2, yPosition + 10)
        .font('Regular')
        .fontSize(9)
-       .text(`Bank: ${employee?.bankAccounts?.bankName || 'AXIS BANK'}`, doc.page.width / 2, yPosition + 25)
-       .text(`Account: ${this.formatAccountNumber(employee?.bankAccounts?.accountNo || '8888888888')}`, doc.page.width / 2, yPosition + 37);
+       .text(`Bank: ${BankInfo?.bankName || 'AXIS BANK'}`, doc.page.width / 2, yPosition + 25)
+       .text(`Account: ${this.formatAccountNumber(BankInfo.accountNo || '8888888888')}`, doc.page.width / 2, yPosition + 37);
   }
 
   private formatAccountNumber(accountNo: string): string {
@@ -267,7 +269,9 @@ export class PdfService {
     const earnings = [
       { description: 'Basic Salary', amount: Number(payroll.basicSalary)},
       { description: 'HRA Allowance', amount: Number(payroll.allowances ) },
-      { description: 'Special Allowance', amount: 0.00 },
+      { description: 'Special Allowance', amount: Number(payroll.specialAllowances ) },
+      { description: 'Other Allowance', amount: Number(payroll.otherAllowances ) },
+
     ].filter(e => e.amount > 0); // Only include non-zero amounts
     
     // Prepare data for deductions table
@@ -421,9 +425,10 @@ export class PdfService {
 
   private drawSummary(doc: any, payroll: Payroll, yPosition: number): void {
     // Calculate totals
-    const totalEarnings = Number(payroll.basicSalary || 0) + Number(payroll.allowances || 0);
-    const totalDeductions = Number(payroll.taxDeductions || 0) + Number(payroll.deductions || 0);
-    const netPay = Number(payroll.netSalary) || (totalEarnings - totalDeductions);
+    
+    const netPay = Number(payroll.netSalary);
+    console.log(netPay);
+
     
     // Net pay section with highlighted background
     doc.rect(50, yPosition, doc.page.width - 100, 60)

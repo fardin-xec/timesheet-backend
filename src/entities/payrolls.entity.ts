@@ -38,6 +38,12 @@ export class Payroll {
   @Column({ type: 'numeric', precision: 12, scale: 2, default: 0 })
   allowances: number;
 
+  @Column({name: "other_allowances", type: 'numeric', precision: 12, scale: 2, default: 0 })
+  otherAllowances: number;
+
+  @Column({name: "special_allowances", type: 'numeric', precision: 12, scale: 2, default: 0 })
+  specialAllowances: number;
+
   @Column({ type: 'numeric', precision: 12, scale: 2, default: 0 })
   bonuses: number;
 

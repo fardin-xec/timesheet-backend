@@ -121,9 +121,13 @@ export class PayrollService {
 
 
     const monthlySalary = employee.ctc / 12;
-    const basicSalary = monthlySalary * 0.6;
+    const basicSalary = monthlySalary * 0.5;
     const allowances = monthlySalary * 0.4;
-    const grossSalary = basicSalary + allowances;
+    const specialAllowances=monthlySalary * 0.1;
+
+
+   
+    const grossSalary = basicSalary + allowances + specialAllowances;
 
     const currency= employee.currency;
 
@@ -132,8 +136,6 @@ export class PayrollService {
     if(leavesLossOfpay>0){
       deductions=leavesLossOfpay*DaySalary;
       console.log(DaySalary);
-      
-      
     }
     console.log(deductions);
 
@@ -162,6 +164,7 @@ export class PayrollService {
       leaveDays,
       currency,
       status: PayrollStatus.PENDING,
+      specialAllowances,
     });
 
     const savedPayroll = await this.payrollRepository.save(payroll);
@@ -171,7 +174,11 @@ export class PayrollService {
  
 
   private async generatePayslip(payroll: Payroll) {
-    const employee = await this.employeeRepository.findOne({ where: { id: payroll.employeeId } });
+    const employee = await this.employeeRepository.findOne({ 
+      where: { id: payroll.employeeId },
+      relations: ['bankAccounts']
+    });    
+    
     const org = await this.organizationRepository.findOne({ where: { orgId: employee.orgId } });
     const pdfUrl = await this.pdfService.generatePayslipPdf(payroll, employee,org);
     const paySlip= await this.payslipRepository.findOne({where:{payrollId:payroll.id}})
@@ -259,10 +266,37 @@ export class PayrollService {
         throw new NotFoundException('Payroll not found');
       }
 
-      Object.assign(payroll, updatePayrollDto);
-      payroll.netSalary =
-        (payroll.basicSalary || 0) -
-        (payroll.taxDeductions || 0);
+   
+   
+    if(updatePayrollDto.otherAllowances){
+      payroll.otherAllowances=updatePayrollDto.otherAllowances;
+    }
+
+
+    const basicSalary = +payroll.basicSalary;
+    const allowances = +payroll.allowances;
+    const otherAllowances = +payroll.otherAllowances;
+    const specialAllowances = +payroll.specialAllowances;
+
+    const deductions = +payroll.deductions;
+    const taxDeductions = +payroll.taxDeductions;
+
+
+
+    
+    const grossSalary = basicSalary + allowances+specialAllowances +otherAllowances;
+
+
+
+   const netSalary = (grossSalary - deductions) - taxDeductions;
+
+
+     payroll.netSalary=netSalary;
+
+     
+
+
+     
 
 
       const result=await this.payrollRepository.save(payroll);
