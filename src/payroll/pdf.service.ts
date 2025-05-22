@@ -427,7 +427,6 @@ export class PdfService {
     // Calculate totals
     
     const netPay = Number(payroll.netSalary);
-    console.log(netPay);
 
     
     // Net pay section with highlighted background
