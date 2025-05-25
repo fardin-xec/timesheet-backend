@@ -47,7 +47,7 @@ export class SeedBankInfoData1748157914920 implements MigrationInterface {
       (19, 'Commercial bank of Qatar', 'YASHWANTH MANDYA BHADRANARASIMHACHAR', '', '', '', 'QA19CBQA000000004730571052101', true, NOW(), NOW()),
       (33, 'Commercial bank of Qatar', 'Gulam Hafiz Navid Adhikari Adhikari', '', '', '', 'QA04CBQA000000004730692893101', true, NOW(), NOW()),
       (36, 'Commercial bank of Qatar', 'Mohd Faizuddin Syed Shakil Uddin', '', '', '', 'QA32CBQA000000473065330010101', true, NOW(), NOW()),
-      (7, 'Commercial bank of Qatar, 'SUMY PAPPACHEN', '', '', '', 'QA22CBQA000000004060639910101', true, NOW(), NOW()),
+      (7, 'Commercial bank of Qatar', 'SUMY PAPPACHEN', '', '', '', 'QA22CBQA000000004060639910101', true, NOW(), NOW()),
       (17, 'Commercial bank of Qatar', 'SHABAAZ SHOUKATHALI MOHSIN', '', '', '', 'QA72CBQA000000473053230012101', true, NOW(), NOW()),
       (12, 'Commercial bank of Qatar', 'JOSE ARISTOTLE LAWERENCE LUDWICK NORONHA', '', '', '', 'QA42CBQA000000473053250012101', true, NOW(), NOW()),
       (35, 'Commercial bank of Qatar', 'ASHINA AZAD SHANIFA', '', '', '', 'QA74CBQA000000401036360017001', true, NOW(), NOW())
