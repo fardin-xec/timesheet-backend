@@ -39,7 +39,7 @@ export class PayrollService {
     private pdfService: PdfService,
   ) {}
 
-  @Cron(CronExpression.EVERY_1ST_DAY_OF_MONTH_AT_MIDNIGHT, {
+  @Cron(CronExpression.EVERY_10_MINUTES, {
     name: 'monthlyPayrollGeneration',
     timeZone: 'UTC',
   })
