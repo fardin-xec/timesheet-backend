@@ -39,7 +39,7 @@ export class PayrollService {
     private pdfService: PdfService,
   ) {}
 
-  @Cron(CronExpression.EVERY_10_MINUTES, {
+  @Cron(CronExpression.EVERY_1ST_DAY_OF_MONTH_AT_MIDNIGHT, {
     name: 'monthlyPayrollGeneration',
     timeZone: 'UTC',
   })
@@ -47,8 +47,9 @@ export class PayrollService {
     this.logger.log('Starting monthly payroll generation');
     
     const organizations = await this.organizationRepository.find();
-    const currentDate = new Date(2025, 3, 30); // Note: Month is 0-indexed (3 = April)
-    const payrollMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
+    const currentDate = new Date();
+    // Calculate payroll for the previous month
+    const payrollMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1);
 
     for (const org of organizations) {
       try {
