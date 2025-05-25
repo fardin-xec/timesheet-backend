@@ -16,14 +16,17 @@ export class BankInfo {
   @Column({ name: 'account_holder_name', length: 100 })
   accountHolderName: string;
 
-  @Column({ length: 100, nullable: true })
+  @Column({ length: 100, nullable: true})
   city: string;
 
   @Column({ name: 'branch_name', length: 100, nullable: true })
   branchName: string;
 
-  @Column({ name: 'ifsc_code', length: 20 })
+  @Column({ name: 'ifsc_code', length: 20,nullable:true })
   ifscCode: string;
+
+   @Column({ name: 'swift_code', length: 20,nullable:true })
+  swiftCode: string;
 
   @Column({ name: 'account_no', length: 50 })
   accountNo: string;

@@ -32,7 +32,6 @@ export class BankInfoService {
       employeeId:BankInfo.employeeId,
     };
     
-    console.log(bankInfoData);
     
     
     const bankInfo = this.bankInfoRepository.create(bankInfoData);
