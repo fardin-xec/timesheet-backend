@@ -235,7 +235,7 @@ export class PdfService {
        .font('Regular')
        .fontSize(9)
        .text(`Bank: ${BankInfo?.bankName || 'AXIS BANK'}`, doc.page.width / 2, yPosition + 25)
-       .text(`Account: ${this.formatAccountNumber(BankInfo.accountNo || '8888888888')}`, doc.page.width / 2, yPosition + 37);
+       .text(`Account: ${this.formatAccountNumber(BankInfo?.accountNo || '8888888888')}`, doc.page.width / 2, yPosition + 37);
   }
 
   private formatAccountNumber(accountNo: string): string {
