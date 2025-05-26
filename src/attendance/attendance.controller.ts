@@ -85,7 +85,11 @@ export class AttendanceController {
       return new ResponseDto(HttpStatus.OK, 'Attendance updated successfully', data);
     } catch (error) {
       console.error('Controller error updating attendance:', error);
+      if(error.message==="Reset Check in button"){
+        return new ResponseDto(HttpStatus.OK,error,null);
+      }else{
       throw new HttpException(error.message || 'Failed to update attendance', HttpStatus.BAD_REQUEST);
+      }
     }
   }
 

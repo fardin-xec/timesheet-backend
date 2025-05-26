@@ -150,6 +150,10 @@ export class AttendanceService {
       throw new HttpException('Attendance not found', HttpStatus.NOT_FOUND);
     }
 
+    if(updateAttendanceDto.checkOutTime&&attendance.checkInTime===null){
+       return attendance;
+    }
+
     const attendanceId = attendance.id;
 
     // Prevent updating checkInTime if it already exists
@@ -199,7 +203,6 @@ export class AttendanceService {
   }
 
   async updateAttendance(id: number, updateAttendanceDto: UpdateAttendanceDto): Promise<Attendance | null> {
-
 
     const attendance = await this.attendanceRepository.findOne({ where: { id } });
     if (!attendance) {
