@@ -107,8 +107,8 @@ export class LeaveService {
       // Get high-level employees who should be notified
       const highLevelEmployees = await this.employeeRepository.find({
         where: [
-          { jobTitle: 'Project Manager' },
-          { jobTitle: 'HR' },
+          { jobTitle: 'PM' },
+          { jobTitle: 'HR Executive' },
           { jobTitle: 'CEO' },
         ],
         select: ['email'],
