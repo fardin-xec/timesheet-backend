@@ -145,11 +145,11 @@ export class PayrollService {
       where: { orgId: employee.orgId, isActive: true , currency: employee.currency},
     });
 
-    const taxDeductions = taxRegime
-      ? this.calculateTax(grossSalary, taxRegime.taxBrackets)
-      : this.defaultTaxCalculation(grossSalary);
+    // const taxDeductions = taxRegime
+    //   ? this.calculateTax(grossSalary, taxRegime.taxBrackets)
+    //   : this.defaultTaxCalculation(grossSalary);
 
-    const netSalary = (grossSalary - deductions) - taxDeductions;
+    const netSalary = (grossSalary - deductions);
 
     const payroll = this.payrollRepository.create({
       employeeId: employee.id,
@@ -159,7 +159,7 @@ export class PayrollService {
       allowances,
       deductions,
       bonuses: 0,
-      taxDeductions,
+      taxDeductions: 0,
       netSalary,
       workingDays,
       leaveDays,
