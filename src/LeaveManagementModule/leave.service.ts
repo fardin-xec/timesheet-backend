@@ -110,6 +110,7 @@ export class LeaveService {
           { jobTitle: 'PM' },
           { jobTitle: 'HR Executive' },
           { jobTitle: 'CEO' },
+          { department: employee.department },
         ],
         select: ['email'],
       });
