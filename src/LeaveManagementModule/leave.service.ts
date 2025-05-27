@@ -534,6 +534,134 @@ async unassignLeaveRule(employeeId: number, ruleId: number): Promise<ResponseDto
     }
   }
 
+  private async sendLeaveStatusUpdateEmail(
+    employee: Employee, 
+    leave: Leave, 
+    approvedBy?: Employee
+  ): Promise<void> {
+    try {
+      // Format dates for better readability
+      const formattedStartDate = new Date(leave.startDate).toLocaleDateString('en-US', {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+      });
+      
+      const formattedEndDate = new Date(leave.endDate).toLocaleDateString('en-US', {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+      });
+
+      // Determine status color and message
+      const getStatusColor = (status: LeaveStatus): string => {
+        switch (status) {
+          case LeaveStatus.APPROVED: return '#4CAF50';
+          case LeaveStatus.REJECTED: return '#F44336';
+          case LeaveStatus.PENDING: return '#FF9800';
+          default: return '#757575';
+        }
+      };
+
+      const getStatusMessage = (status: LeaveStatus): string => {
+        switch (status) {
+          case LeaveStatus.APPROVED: return 'Your leave application has been approved! 🎉';
+          case LeaveStatus.REJECTED: return 'Your leave application has been rejected.';
+          case LeaveStatus.PENDING: return 'Your leave application is pending review.';
+          default: return 'Your leave application status has been updated.';
+        }
+      };
+
+      // Prepare email content
+      const subject = `Leave ${leave.status}: ${leave.leaveType} - ${formattedStartDate} to ${formattedEndDate}`;
+      
+      // Plain text version
+      const text = `
+        Dear ${employee.firstName} ${employee.lastName},
+        
+        ${getStatusMessage(leave.status)}
+        
+        Leave Application Details:
+        Employee: ${employee.firstName} ${employee.midName || ''} ${employee.lastName}
+        Leave Type: ${leave.leaveType}
+        Duration: ${formattedStartDate} to ${formattedEndDate}
+        Total Days: ${leave.appliedDays}
+        Current Status: ${leave.status}
+        ${approvedBy ? `Processed by: ${approvedBy.firstName} ${approvedBy.lastName}` : ''}
+        Reason: ${leave.reason || 'Not specified'}
+        
+        ${leave.status === LeaveStatus.APPROVED ? 
+          'Please ensure proper handover of your responsibilities before your leave begins.' : 
+          leave.status === LeaveStatus.REJECTED ? 
+          'If you have any questions about this decision, please contact your manager or HR.' : 
+          'You will be notified once your leave application is reviewed.'
+        }
+        
+        This notification was sent automatically by the HR Management System.
+      `;
+      
+      // HTML version with better formatting
+      const html = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 5px;">
+          <div style="display: flex; align-items: center; border-bottom: 1px solid #eee; padding-bottom: 10px;">
+            <img src="https://public-image-file.s3.ap-south-1.amazonaws.com/Auxaitech-01.png" alt="Company Logo" style="height: 40px; margin-right: 20px;">
+            <h2 style="color: #333; margin: 0;">Leave Status Update</h2>
+          </div>
+          
+          <div style="margin: 20px 0;">
+            <p style="font-size: 16px; color: #333;">Dear ${employee.firstName} ${employee.lastName},</p>
+            <p style="font-size: 16px; font-weight: bold; color: ${getStatusColor(leave.status)};">
+              ${getStatusMessage(leave.status)}
+            </p>
+          </div>
+          
+          <div style="background-color: #f9f9f9; padding: 15px; border-radius: 5px; margin: 20px 0;">
+            <h3 style="color: #333; margin-top: 0;">Leave Application Details:</h3>
+            <p><strong>Employee:</strong> ${employee.firstName} ${employee.lastName}</p>
+            <p><strong>Department:</strong> ${employee.department || 'Not specified'}</p>
+            <p><strong>Leave Type:</strong> ${leave.leaveType}</p>
+            <p><strong>From:</strong> ${formattedStartDate}</p>
+            <p><strong>To:</strong> ${formattedEndDate}</p>
+            <p><strong>Total Days:</strong> ${leave.appliedDays}</p>
+            <p><strong>Current Status:</strong> <span style="color: ${getStatusColor(leave.status)}; font-weight: bold;">${leave.status}</span></p>
+            ${approvedBy ? `<p><strong>Processed by:</strong> ${approvedBy.firstName} ${approvedBy.lastName}</p>` : ''}
+            <p><strong>Reason:</strong> ${leave.reason || 'Not specified'}</p>
+          </div>
+          
+          ${leave.status === LeaveStatus.APPROVED ? 
+            '<div style="background-color: #e8f5e8; padding: 15px; border-radius: 5px; border-left: 4px solid #4CAF50; margin: 20px 0;"><p style="margin: 0; color: #2e7d32;"><strong>Next Steps:</strong> Please ensure proper handover of your responsibilities before your leave begins.</p></div>' : 
+            leave.status === LeaveStatus.REJECTED ? 
+            '<div style="background-color: #ffebee; padding: 15px; border-radius: 5px; border-left: 4px solid #F44336; margin: 20px 0;"><p style="margin: 0; color: #c62828;">If you have any questions about this decision, please contact your manager or HR department.</p></div>' : 
+            '<div style="background-color: #fff3e0; padding: 15px; border-radius: 5px; border-left: 4px solid #FF9800; margin: 20px 0;"><p style="margin: 0; color: #ef6c00;">You will be notified once your leave application is reviewed.</p></div>'
+          }
+          
+          <div style="background-color: #f5f5f5; padding: 10px; border-radius: 4px; font-size: 12px; color: #666; margin-top: 20px;">
+            <p style="margin-bottom: 10px;">This is an automated notification from the HR Management System.</p>
+            <img src="https://public-image-file.s3.ap-south-1.amazonaws.com/Auxaitech-01.png" alt="Company Logo" style="height: 30px;">
+          </div>
+        </div>
+      `;
+
+      // Send the email to the employee
+      await this.emailService.sendMail(
+        employee.email, // Primary recipient (employee who applied for leave)
+        subject,
+        text,
+        html,
+        {
+          replyTo: process.env.HR_EMAIL || 'hr@company.com',
+        }
+      );
+      
+      console.log(`Leave status update email sent to ${employee.email} - Status: ${leave.status}`);
+    } catch (emailError) {
+      console.error(`Failed to send leave status update email: ${emailError.message}`, emailError.stack);
+      // Don't throw the error - we don't want email failure to prevent status update
+    }
+  }
+
   async updateStatusLeave(id: number, updateLeaveDto: UpdateLeaveDto): Promise<ResponseDto<Leave>> {
     try {
       const leaveResponse = await this.findLeaveById(id);
@@ -542,8 +670,7 @@ async unassignLeaveRule(employeeId: number, ruleId: number): Promise<ResponseDto
       }
 
       const leave = leaveResponse.data;
-
-     
+      const previousStatus = leave.status; // Store previous status for email notification
 
       if (updateLeaveDto.status === LeaveStatus.APPROVED && !updateLeaveDto.approvedBy) {
         return new ResponseDto(
@@ -552,14 +679,9 @@ async unassignLeaveRule(employeeId: number, ruleId: number): Promise<ResponseDto
           null,
         );
       }
-     
 
-      
-      // Handle leave balance if appliedDays changes
-      if (leave.appliedDays&&updateLeaveDto.status===LeaveStatus.APPROVED) {
-
-         // Calculate applied days correctly
-      
+      // Handle leave balance if status is being approved
+      if (leave.appliedDays && updateLeaveDto.status === LeaveStatus.APPROVED) {
         const balance = await this.leaveBalancesRepository.findOne({
           where: {
             employee: { id: leave.employee.id },
@@ -571,22 +693,42 @@ async unassignLeaveRule(employeeId: number, ruleId: number): Promise<ResponseDto
         if (!balance) {
           return new ResponseDto(HttpStatus.BAD_REQUEST, 'No leave balance found', null);
         }
+        
         balance.used = Number(balance.used) + Number(leave.appliedDays);
+        
         if (balance.used > balance.totalAllowed) {
           return new ResponseDto(HttpStatus.BAD_REQUEST, 'Insufficient leave balance', null);
         }
         
-        await this.leaveBalancesRepository.save(balance)
-      
+        await this.leaveBalancesRepository.save(balance);
       }
 
+      // Get approver information if approvedBy is provided
+      let approver: Employee | null = null;
+      if (updateLeaveDto.approvedBy) {
+        approver = await this.employeeRepository.findOne({ 
+          where: { id: updateLeaveDto.approvedBy } 
+        });
+      }
+
+      // Update leave status
       Object.assign(leave, updateLeaveDto);
       const updatedLeave = await this.leaveRepository.save(leave);
 
-      return new ResponseDto(HttpStatus.OK, 'Leave updated successfully', updatedLeave);
+      // Send email notification to employee about status change
+      if (previousStatus !== updateLeaveDto.status && updateLeaveDto.status) {
+        await this.sendLeaveStatusUpdateEmail(
+          leave.employee, 
+          updatedLeave, 
+          approver
+        );
+      }
+
+      return new ResponseDto(HttpStatus.OK, 'Leave status updated successfully', updatedLeave);
     } catch (error) {
-      console.error('Error updating leave:', error);
-      return new ResponseDto(HttpStatus.INTERNAL_SERVER_ERROR, 'Failed to update leave', null);
+      console.error('Error updating leave status:', error);
+      return new ResponseDto(HttpStatus.INTERNAL_SERVER_ERROR, 'Failed to update leave status', null);
     }
   }
+
 }
