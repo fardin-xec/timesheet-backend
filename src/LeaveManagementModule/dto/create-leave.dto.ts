@@ -1,35 +1,48 @@
-import { IsDate, IsEnum, IsInt, IsNumber, IsOptional, IsString, Max, Min } from 'class-validator';
-import { LeaveStatus, LeaveType } from 'src/entities/leave.entity';
+import { IsString, IsNotEmpty, IsDateString, IsNumber, IsOptional, IsBoolean, IsEnum } from 'class-validator';
+
+export enum HalfDayType {
+  FIRST_HALF = 'first_half',
+  SECOND_HALF = 'second_half',
+}
 
 export class CreateLeaveDto {
-  @IsInt()
-  @Min(1)
+  @IsNumber()
+  @IsNotEmpty()
   employeeId: number;
 
-  @IsEnum(LeaveType)
-  leaveType: LeaveType;
-
-  @IsDate()
-  startDate: Date;
-
-  @IsDate()
-  endDate: Date;
-
-  @IsOptional()
   @IsString()
+  @IsNotEmpty()
+  leaveType: string;
+
+  @IsDateString()
+  @IsNotEmpty()
+  startDate: string;
+
+  @IsDateString()
+  @IsNotEmpty()
+  endDate: string;
+
+  @IsString()
+  @IsOptional()
   reason?: string;
 
-  @IsEnum(LeaveStatus)
+  @IsString()
   @IsOptional()
-  status: LeaveStatus = LeaveStatus.PENDING;
-
-  @IsOptional()
-  @IsInt()
-  @Min(1)
-  approvedBy?: number;
+  status?: string;
 
   @IsNumber()
-  @Min(0.5)
-  @Max(365)
-  appliedDays: number;
+  @IsOptional()
+  appliedDays?: number;
+
+  @IsBoolean()
+  @IsOptional()
+  isHalfDay?: boolean;
+
+  @IsEnum(HalfDayType)
+  @IsOptional()
+  halfDayType?: HalfDayType;
+
+  @IsString()
+  @IsOptional()
+  attachmentUrl?: string;
 }

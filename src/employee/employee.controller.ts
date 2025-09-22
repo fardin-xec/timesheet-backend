@@ -116,11 +116,25 @@ export class EmployeeController {
 
       // Step 2: Create the user
       const user = await this.UsersService.create(userData);
+      //update employeeId auto generate AT-00XX
 
-      // Step 3: Create the employee with the user information
+       // Step 3: Generate employee ID in format AT-XX00
+    const lastEmployee = await this.employeeService.findLastEmployee(); // Assume this method gets the last employee
+    let newEmployeeId = 'AT-0000';
+    if (lastEmployee && lastEmployee.employeeId) {
+      const lastIdNumber = parseInt(lastEmployee.employeeId.split('-')[1], 10);
+      const newIdNumber = (lastIdNumber + 1).toString().padStart(4, '0');
+      newEmployeeId = `AT-${newIdNumber}`;
+    }
+
+   
+
+      // Step 4: Create the employee with the user information
       const data = await this.employeeService.create({
         ...employeeData,
         userId: user.id, // Assuming the user ID is needed to link the employee to the user
+        employeeId: newEmployeeId, // Add auto-generated employeeId
+
       });
 
       if(data.id){

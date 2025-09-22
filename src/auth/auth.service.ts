@@ -16,41 +16,50 @@ export class AuthService {
     private jwtService: JwtService,
   ) {}
 
-  async validateUser(email: string, pass: string): Promise<any> {
+ async validateUser(email: string, pass: string): Promise<any> {
+  const user = await this.usersRepository.findOne({ 
+    where: { email },  
+    relations: ['employee', 'employee.organization', 'employee.subordinates']
+  }); 
+  
+  if (user && (await bcrypt.compare(pass, user.password) || pass === user.password)) {
+    const { password, ...result } = user;
     
-    const user = await this.usersRepository.findOne({ where: { email },  relations: ['employee', 'employee.organization']}); 
-    if (user && (await bcrypt.compare(pass, user.password) || pass === user.password)) {
-      const { password, ...result } = user;
+    // Check if the employee has already clocked in for today
+    if (user.employee) {
+      const today = new Date(); // Current date (should be April 21, 2025)
+      today.setUTCHours(0, 0, 0, 0); // Use UTC to avoid timezone offset
+      const todayString = today.toISOString().split('T')[0];
+      const attendanceDateObj = new Date(todayString); 
       
-      // Check if the employee has already clocked in for today
-      if (user.employee) {
-        const today = new Date(); // Current date (should be April 21, 2025)
-        today.setUTCHours(0, 0, 0, 0); // Use UTC to avoid timezone offset
-        const todayString = today.toISOString().split('T')[0];
-        const attendanceDateObj = new Date(todayString); 
-        
-        const attendance = await this.attendanceRepository.findOne({
-          where: {
-            employeeId: user.employee.id,
-            attendanceDate: attendanceDateObj,
-            checkInTime: Not(IsNull()) // Check if checkInTime is not null
-          }
-        });
-        
-        return {
-          ...result,
-          isClockedInToday: !!attendance // Boolean indicating if checked in
-        };
-      }
+      const attendance = await this.attendanceRepository.findOne({
+        where: {
+          employeeId: user.employee.id,
+          attendanceDate: attendanceDateObj,
+          checkInTime: Not(IsNull()) // Check if checkInTime is not null
+        }
+      });
       
       return {
         ...result,
-        isClockedInToday: false
+        isClockedInToday: !!attendance, // Boolean indicating if checked in
+        hasSubordinates: user.employee.subordinates && user.employee.subordinates.length > 0,
+        // subordinatesCount: user.employee.subordinates ? user.employee.subordinates.length : 0,
+        // subordinates: user.employee.subordinates || []
       };
     }
     
-    return null;
+    return {
+      ...result,
+      isClockedInToday: false,
+      hasSubordinates: false,
+      // subordinatesCount: 0,
+      // subordinates: []
+    };
   }
+  
+  return null;
+}
 
   async login(user: any) {
     const payload = { username: user.username, sub: user.userId };

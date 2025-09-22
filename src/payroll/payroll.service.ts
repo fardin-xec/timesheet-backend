@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, Logger, HttpException, HttpStatus } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Between, LessThanOrEqual, MoreThanOrEqual } from 'typeorm';
+import { Repository, Between, LessThanOrEqual, MoreThanOrEqual, In } from 'typeorm';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { Payroll, PayrollStatus } from '../entities/payrolls.entity';
 import { Payslip } from '../entities/payslips.entity';
@@ -13,6 +13,7 @@ import { UpdatePayrollDto } from './dto/update-payroll.dto';
 import { Organization } from '../entities/organizations.entity';
 import { S3 } from 'aws-sdk';
 import { Readable } from 'stream';
+import { integer } from 'aws-sdk/clients/cloudfront';
 
 // In-memory cache for presigned URLs
 const presignedUrlCache = new Map<string, { url: string; expires: number; size: number }>();
@@ -285,11 +286,11 @@ export class PayrollService {
 
 
     
-    const grossSalary = basicSalary + allowances+specialAllowances +otherAllowances;
+      const grossSalary = basicSalary + allowances+specialAllowances +otherAllowances;
 
 
 
-   const netSalary = (grossSalary - deductions) - taxDeductions;
+      const netSalary = (grossSalary - deductions) - taxDeductions;
 
 
       payroll.netSalary=netSalary;
@@ -510,5 +511,62 @@ export class PayrollService {
         error instanceof NotFoundException ? HttpStatus.NOT_FOUND : HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
+  }
+
+  async bulkUpdatePayroll(updates: { id: integer; status?: string; otherAllowances?: number }[]): Promise<Payroll[]> {
+    if (!updates || updates.length === 0) {
+      throw new HttpException('No updates provided', HttpStatus.BAD_REQUEST);
+    }
+
+    const ids = updates.map((item) => item.id);
+    const payrolls = await this.payrollRepository.find({
+      where: { id: In(ids) },
+    });
+
+    if (payrolls.length !== ids.length) {
+      throw new HttpException('One or more payroll records not found', HttpStatus.NOT_FOUND);
+    }
+
+    const updatedPayrolls: Payroll[] = [];
+
+
+    
+    await this.payrollRepository.manager.transaction(async (transactionalEntityManager) => {
+      for (const update of updates) {
+        const payroll = payrolls.find((p) => p.id ===update.id);
+        if (!payroll) continue;
+        let updatedPayroll;
+
+        // Apply updates
+        if (update.status && ['approved', 'pending'].includes(update.status)) {
+          if(update.status==='approved'){
+           payroll.status = PayrollStatus.APPROVED;
+          }else{
+           payroll.status = PayrollStatus.PENDING;
+
+          }
+         updatedPayroll = await transactionalEntityManager.save(Payroll, payroll);
+
+        }
+        if (update.otherAllowances !== undefined) {
+          payroll.otherAllowances = update.otherAllowances;
+          const basicSalary = +payroll.basicSalary;
+          const allowances = +payroll.allowances;
+          const otherAllowances = +payroll.otherAllowances;
+          const specialAllowances = +payroll.specialAllowances;
+          const grossSalary = basicSalary + allowances+specialAllowances +otherAllowances;
+          payroll.netSalary=grossSalary;
+          console.log(grossSalary);
+          
+          updatedPayroll = await transactionalEntityManager.save(Payroll, payroll);
+      
+          await this.generatePayslip(updatedPayroll);
+        }
+
+        updatedPayrolls.push(updatedPayroll);
+      }
+    });
+
+    return updatedPayrolls;
   }
 }

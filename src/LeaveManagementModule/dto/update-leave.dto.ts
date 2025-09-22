@@ -1,35 +1,13 @@
-import { IsDate, IsEnum, IsInt, IsNumber, IsOptional, IsString, Max, Min } from 'class-validator';
-import { LeaveStatus, LeaveType } from 'src/entities/leave.entity';
+import { PartialType } from '@nestjs/mapped-types';
+import { CreateLeaveDto } from './create-leave.dto';
+import { IsNumber,IsString, IsOptional } from 'class-validator';
 
-export class UpdateLeaveDto {
+export class UpdateLeaveDto extends PartialType(CreateLeaveDto) {
+  @IsNumber()
   @IsOptional()
-  @IsEnum(LeaveType)
-  leaveType?: LeaveType;
-
-  @IsOptional()
-  @IsDate()
-  startDate?: Date;
-
-  @IsOptional()
-  @IsDate()
-  endDate?: Date;
-
-  @IsOptional()
-  @IsString()
-  reason?: string;
-
-  @IsOptional()
-  @IsEnum(LeaveStatus)
-  status?: LeaveStatus;
-
-  @IsOptional()
-  @IsInt()
-  @Min(1)
   approvedBy?: number;
 
+  @IsString()
   @IsOptional()
-  @IsNumber()
-  @Min(0.5)
-  @Max(365)
-  appliedDays?: number;
+  attachmentUrl?: string;
 }

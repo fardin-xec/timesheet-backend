@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException, HttpStatus } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { Leave, LeaveStatus } from '../entities/leave.entity';
+import { In, Repository } from 'typeorm';
+import { Leave, LeaveStatus, LeaveType } from '../entities/leave.entity';
 import { LeaveBalances } from '../entities/leave-balance.entity';
 import { LeaveRule } from '../entities/leave-rule.entity';
 import { EmployeeLeaveRule } from '../entities/employee-leave-rule.entity';
@@ -24,33 +24,152 @@ export class LeaveService {
     private employeeLeaveRuleRepository: Repository<EmployeeLeaveRule>,
     @InjectRepository(Employee)
     private employeeRepository: Repository<Employee>,
-    private  emailService: EmailService, // Inject EmailService
+    private emailService: EmailService,
   ) {}
+
+   /**
+   * Upload file to cloud storage (S3 or similar)
+   */
+  async uploadFile(file: Express.Multer.File): Promise<string> {
+    try {
+      // This is a placeholder implementation
+      // Replace with your actual file upload logic (AWS S3, Cloudinary, etc.)
+      
+      // Generate unique filename
+      const timestamp = Date.now();
+      const randomString = Math.random().toString(36).substring(2, 15);
+      const fileExtension = file.originalname.split('.').pop();
+      const fileName = `leave-attachments/${timestamp}_${randomString}.${fileExtension}`;
+      
+      // Mock upload URL - replace with actual implementation
+      const uploadedUrl = `https://your-storage-bucket.s3.amazonaws.com/${fileName}`;
+      
+      // Here you would implement the actual upload logic:
+      // const uploadResult = await this.s3Service.upload(file, fileName);
+      // return uploadResult.Location;
+      
+      console.log(`File uploaded: ${file.originalname} -> ${uploadedUrl}`);
+      return uploadedUrl;
+      
+    } catch (error) {
+      console.error('Error uploading file:', error);
+      throw new BadRequestException('Failed to upload file');
+    }
+  }
+  /**
+   * Validate leave cycle restrictions for CL/SL
+   */
+  private validateLeaveCycleRestrictions(leaveType: string, startDate: Date, endDate: Date): string | null {
+    const currentYear = new Date().getFullYear();
+    const startYear = startDate.getFullYear();
+    const endYear = endDate.getFullYear();
+    
+    // Check if CL/SL is being applied beyond current year
+    if ((leaveType.toLowerCase() === 'casual' || leaveType.toLowerCase() === 'sick') && 
+        (startYear > currentYear || endYear > currentYear)) {
+      return 'Casual Leave and Sick Leave cannot be applied beyond the current leave cycle. Please reapply in the new year.';
+    }
+    
+    return null;
+  }
+
+  /**
+   * Calculate leave days including half-day logic
+   */
+  private calculateLeaveDays(startDate: Date, endDate: Date, isHalfDay: boolean = false): number {
+    if (isHalfDay && startDate.getTime() === endDate.getTime()) {
+      return 0.5; // Half day
+    }
+    
+    const diffTime = Math.abs(endDate.getTime() - startDate.getTime());
+    return Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1; // +1 to include both start and end date
+  }
+
+  /**
+   * Validate carry forward rules for Annual Leave
+   */
+  private async validateCarryForwardRules(employeeId: number, leaveType: string, appliedDays: number, startDate: Date): Promise<{ isValid: boolean; message?: string }> {
+    if (leaveType.toLowerCase() !== 'annual') {
+      return { isValid: true };
+    }
+
+    const currentYear = new Date().getFullYear();
+    const startYear = startDate.getFullYear();
+    
+    // If applying for next year, check carry forward balance
+    if (startYear > currentYear) {
+      const currentYearBalance = await this.leaveBalancesRepository.findOne({
+        where: {
+          employee: { id: employeeId },
+          leaveType: LeaveType[leaveType as keyof typeof LeaveType],
+          year: currentYear,
+        },
+      });
+
+      if (!currentYearBalance) {
+        return { isValid: false, message: 'No current year balance found for annual leave' };
+      }
+
+      // Check if sufficient carry forward balance exists
+      const carryForwardAvailable = Math.min(currentYearBalance.carryForwarded || 0, 10); // Max 10 AL can be carried forward
+      
+      if (appliedDays > carryForwardAvailable) {
+        return { isValid: false, message: `Insufficient carry forward balance. Available: ${carryForwardAvailable} days` };
+      }
+    }
+
+    return { isValid: true };
+  }
 
   async createLeave(createLeaveDto: CreateLeaveDto): Promise<ResponseDto<Leave>> {
     try {
-      const { employeeId, leaveType, startDate, endDate } = createLeaveDto;
+      const { employeeId, leaveType, startDate, endDate, isHalfDay, halfDayType, attachmentUrl } = createLeaveDto;
       
       // Validate employee exists
       const employee = await this.employeeRepository.findOne({ where: { id: employeeId } });
       if (!employee) {
         return new ResponseDto(HttpStatus.NOT_FOUND, 'Employee not found', null);
       }
-    
-      // Calculate applied days correctly
+
       const start = new Date(startDate);
       const end = new Date(endDate);
-      
-      // Calculate the difference in days
-      const diffTime = Math.abs(end.getTime() - start.getTime());
-      const appliedDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1; // +1 to include both start and end date
+
+      // Validate leave cycle restrictions for CL/SL
+      const cycleValidationError = this.validateLeaveCycleRestrictions(leaveType, start, end);
+      if (cycleValidationError) {
+        return new ResponseDto(HttpStatus.BAD_REQUEST, cycleValidationError, null);
+      }
+
+      // Validate Emergency Leave attachment requirement
+      if (leaveType.toLowerCase() === 'emergency' && !attachmentUrl) {
+        return new ResponseDto(HttpStatus.BAD_REQUEST, 'Please upload supporting document to apply for Emergency Leave.', null);
+      }
+
+      // Validate half-day logic
+      if (isHalfDay && start.getTime() !== end.getTime()) {
+        return new ResponseDto(HttpStatus.BAD_REQUEST, 'Half-day leave can only be applied for a single day', null);
+      }
+
+      // Validate half-day type for loss of pay
+      if (isHalfDay && leaveType.toLowerCase() === 'lossofpay') {
+        return new ResponseDto(HttpStatus.BAD_REQUEST, 'Half-day option is not available for Loss of Pay leave', null);
+      }
+
+      // Calculate applied days
+      const appliedDays = this.calculateLeaveDays(start, end, isHalfDay);
+
+      // Validate carry forward rules for Annual Leave
+      const carryForwardValidation = await this.validateCarryForwardRules(employeeId, leaveType, appliedDays, start);
+      if (!carryForwardValidation.isValid) {
+        return new ResponseDto(HttpStatus.BAD_REQUEST, carryForwardValidation.message, null);
+      }
       
       // Check leave balance
       const balance = await this.leaveBalancesRepository.findOne({
         where: {
           employee: { id: employeeId },
-          leaveType,
-          year: new Date().getFullYear(),
+          leaveType: LeaveType[leaveType as keyof typeof LeaveType],
+          year: start.getFullYear(),
         },
       });
   
@@ -58,27 +177,30 @@ export class LeaveService {
         return new ResponseDto(HttpStatus.BAD_REQUEST, 'No leave balance found for this type and year', null);
       }
   
-      if (balance.used + appliedDays > balance.totalAllowed) {
+      if (Number(balance.used) + appliedDays > Number(balance.totalAllowed)) {
         return new ResponseDto(HttpStatus.BAD_REQUEST, 'Insufficient leave balance', null);
       }
       
       // Create leave with calculated appliedDays
       const leave = this.leaveRepository.create({
         ...createLeaveDto,
-        appliedDays, // Use the calculated value
+        appliedDays,
         employeeId: employeeId,
         approvedBy: null,
-        status: createLeaveDto.status || LeaveStatus.PENDING,
+        status: LeaveStatus.PENDING,
+        isHalfDay: isHalfDay || false,
+        halfDayType: isHalfDay ? halfDayType : null,
+        attachmentUrl: attachmentUrl || null,
       });
   
       const savedLeave = await this.leaveRepository.save(leave);
 
       // Send email notification
-      await this.sendLeaveNotificationEmail(employee, savedLeave, leaveType,  start, end, appliedDays);
+      await this.sendLeaveNotificationEmail(employee, savedLeave[0], leaveType, start, end, appliedDays);
   
-      return new ResponseDto(HttpStatus.CREATED, 'Leave created successfully', savedLeave);
+      return new ResponseDto(HttpStatus.CREATED, 'Leave created successfully', savedLeave[0]);
     } catch (error) {
-        console.error(`Error creating leave: ${error.message}`, error.stack);
+      console.error(`Error creating leave: ${error.message}`, error.stack);
       return new ResponseDto(
         HttpStatus.INTERNAL_SERVER_ERROR,
         `Failed to create leave: ${error.message}`,
@@ -118,7 +240,7 @@ export class LeaveService {
       // Prepare recipients
       const ccRecipients: string[] = [
         ...highLevelEmployees.map(emp => emp.email),
-      ].filter(Boolean); // Remove any undefined/null emails
+      ].filter(Boolean);
       
       // Format dates for better readability
       const formattedStartDate = startDate.toLocaleDateString('en-US', {
@@ -135,10 +257,6 @@ export class LeaveService {
         day: 'numeric'
       });
   
-      console.log(formattedStartDate);
-      console.log(formattedEndDate);
-      
-  
       // Prepare email content
       const subject = `Leave Application: ${employee.firstName} ${employee.lastName} - ${leaveType}`;
       
@@ -149,14 +267,15 @@ export class LeaveService {
         Employee: ${employee.firstName} ${employee.midName} ${employee.lastName} (${employee.email})
         Leave Type: ${leaveType}
         Duration: ${formattedStartDate} to ${formattedEndDate}
-        Total Days: ${appliedDays}
+        Total Days: ${appliedDays}${leave.isHalfDay ? ` (Half Day - ${leave.halfDayType})` : ''}
         Status: ${leave.status}
         Reason: ${leave.reason || 'Not specified'}
+        ${leave.attachmentUrl ? `Supporting Document: ${leave.attachmentUrl}` : ''}
         
         This notification was sent automatically by the HR Management System.
       `;
       
-      // HTML version with better formatting and logo added to the left corner
+      // HTML version with better formatting
       const html = `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 5px;">
           <div style="display: flex; align-items: center; border-bottom: 1px solid #eee; padding-bottom: 10px;">
@@ -170,9 +289,10 @@ export class LeaveService {
             <p><strong>Leave Type:</strong> ${leaveType}</p>
             <p><strong>From:</strong> ${formattedStartDate}</p>
             <p><strong>To:</strong> ${formattedEndDate}</p>
-            <p><strong>Total Days:</strong> ${appliedDays}</p>
+            <p><strong>Total Days:</strong> ${appliedDays}${leave.isHalfDay ? ` (Half Day - ${leave.halfDayType})` : ''}</p>
             <p><strong>Status:</strong> <span style="color: #ff9800; font-weight: bold;">${leave.status}</span></p>
             <p><strong>Reason:</strong> ${leave.reason || 'Not specified'}</p>
+            ${leave.attachmentUrl ? `<p><strong>Supporting Document:</strong> <a href="${leave.attachmentUrl}">View Document</a></p>` : ''}
           </div>
           
           <div style="background-color: #f5f5f5; padding: 10px; border-radius: 4px; font-size: 12px; color: #666;">
@@ -182,24 +302,27 @@ export class LeaveService {
         </div>
       `;
   
-      // Send the email with improved options
-      await this.emailService.sendMail(
-        reportingManager.email, // Primary recipient (employee)
-        subject,
-        text,
-        html,
-        {
-          cc: ccRecipients,
-          replyTo: process.env.HR_EMAIL || 'hr@company.com',
-        }
-      );
+      // Send the email
+      if (reportingManager) {
+        await this.emailService.sendMail(
+          reportingManager.email,
+          subject,
+          text,
+          html,
+          {
+            cc: ccRecipients,
+            replyTo: process.env.HR_EMAIL || 'hr@company.com',
+          }
+        );
+      }
       
-        console.log(`Leave notification email sent to ${employee.email} with ${ccRecipients.length} CC recipients`);
+      console.log(`Leave notification email sent with ${ccRecipients.length} CC recipients`);
     } catch (emailError) {
-        console.log(`Failed to send leave notification email: ${emailError.message}`, emailError.stack);
-      // Don't throw the error - we don't want email failure to prevent leave creation
+      console.log(`Failed to send leave notification email: ${emailError.message}`, emailError.stack);
     }
   }
+
+  // Rest of the methods remain the same...
   async findAllLeaves(): Promise<ResponseDto<Leave[]>> {
     try {
       const leaves = await this.leaveRepository.find({
@@ -244,16 +367,20 @@ export class LeaveService {
 
       const leave = leaveResponse.data;
 
-     // Calculate appliedDays if startDate and endDate are provided in updateLeaveDto
-    if (updateLeaveDto.startDate && updateLeaveDto.endDate) {
-      const start = new Date(updateLeaveDto.startDate);
-      const end = new Date(updateLeaveDto.endDate);
-      
-      // Calculate the difference in days (inclusive)
-      const diffTime = Math.abs(end.getTime() - start.getTime());
-      updateLeaveDto.appliedDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) ; // +1 to include both start and end dates
-    }
+      // Calculate appliedDays if startDate and endDate are provided in updateLeaveDto
+      if (updateLeaveDto.startDate && updateLeaveDto.endDate) {
+        const start = new Date(updateLeaveDto.startDate);
+        const end = new Date(updateLeaveDto.endDate);
+        
+        // Validate leave cycle restrictions for CL/SL
+        const cycleValidationError = this.validateLeaveCycleRestrictions(leave.leaveType, start, end);
+        if (cycleValidationError) {
+          return new ResponseDto(HttpStatus.BAD_REQUEST, cycleValidationError, null);
+        }
 
+        // Calculate the difference in days (inclusive)
+        updateLeaveDto.appliedDays = this.calculateLeaveDays(start, end, updateLeaveDto.isHalfDay);
+      }
 
       if (updateLeaveDto.status === LeaveStatus.APPROVED && !updateLeaveDto.approvedBy) {
         return new ResponseDto(
@@ -263,17 +390,12 @@ export class LeaveService {
         );
       }
      
-
-      
       // Handle leave balance if appliedDays changes
       if (updateLeaveDto.appliedDays && updateLeaveDto.appliedDays !== leave.appliedDays) {
-
-         // Calculate applied days correctly
-      
         const balance = await this.leaveBalancesRepository.findOne({
           where: {
             employee: { id: leave.employee.id },
-            leaveType: leave.leaveType,
+            leaveType: LeaveType[leave.leaveType as keyof typeof LeaveType],
             year: new Date().getFullYear(),
           },
         });
@@ -281,21 +403,22 @@ export class LeaveService {
         if (!balance) {
           return new ResponseDto(HttpStatus.BAD_REQUEST, 'No leave balance found', null);
         }
-        let  delta;
-        if(updateLeaveDto.appliedDays>leave.appliedDays){
-           delta = updateLeaveDto.appliedDays - leave.appliedDays;
-
-        }else{
-           delta =  leave.appliedDays-updateLeaveDto.appliedDays;
-
+        
+        let delta;
+        if(updateLeaveDto.appliedDays > leave.appliedDays){
+          delta = updateLeaveDto.appliedDays - leave.appliedDays;
+        } else {
+          delta = leave.appliedDays - updateLeaveDto.appliedDays;
         }
+        
         if (balance.used + delta > balance.totalAllowed) {
           return new ResponseDto(HttpStatus.BAD_REQUEST, 'Insufficient leave balance', null);
         }
-      
       }
 
       Object.assign(leave, updateLeaveDto);
+      console.log(leave);
+      
       const updatedLeave = await this.leaveRepository.save(leave);
 
       return new ResponseDto(HttpStatus.OK, 'Leave updated successfully', updatedLeave);
@@ -318,7 +441,7 @@ export class LeaveService {
       const balance = await this.leaveBalancesRepository.findOne({
         where: {
           employee: { id: leave.employee.id },
-          leaveType: leave.leaveType,
+          leaveType: LeaveType[leave.leaveType as keyof typeof LeaveType],
           year: new Date().getFullYear(),
         },
       });
@@ -337,66 +460,64 @@ export class LeaveService {
     }
   }
 
+  async assignLeaveRule(employeeId: number, ruleId: number): Promise<ResponseDto<EmployeeLeaveRule>> {
+    const queryRunner = this.employeeLeaveRuleRepository.manager.connection.createQueryRunner();
+    await queryRunner.startTransaction();
 
-async assignLeaveRule(employeeId: number, ruleId: number): Promise<ResponseDto<EmployeeLeaveRule>> {
-  const queryRunner = this.employeeLeaveRuleRepository.manager.connection.createQueryRunner();
-  await queryRunner.startTransaction();
+    try {
+      // Validate employee and rule
+      const employee = await queryRunner.manager.findOne(Employee, { where: { id: employeeId } });
+      if (!employee) {
+        return new ResponseDto(HttpStatus.NOT_FOUND, 'Employee not found', null);
+      }
 
-  try {
-    // Validate employee and rule
-    const employee = await queryRunner.manager.findOne(Employee, { where: { id: employeeId } });
-    if (!employee) {
-      return new ResponseDto(HttpStatus.NOT_FOUND, 'Employee not found', null);
+      const rule = await queryRunner.manager.findOne(LeaveRule, { where: { id: ruleId } });
+      if (!rule) {
+        return new ResponseDto(HttpStatus.NOT_FOUND, 'Leave rule not found', null);
+      }
+
+      // Check if assignment already exists
+      const existingAssignment = await queryRunner.manager.findOne(EmployeeLeaveRule, {
+        where: { employee: { id: employeeId }, rule: { id: ruleId } },
+      });
+      if (existingAssignment) {
+        return new ResponseDto(HttpStatus.BAD_REQUEST, 'Leave rule already assigned to employee', null);
+      }
+
+      // Create and save EmployeeLeaveRule
+      const assignment = this.employeeLeaveRuleRepository.create({
+        employee: { id: employeeId },
+        rule: { id: ruleId },
+      });
+      const savedAssignment = await queryRunner.manager.save(assignment);
+
+      // Create and save LeaveBalance with predefined values
+      const leaveBalance = this.leaveBalancesRepository.create({
+        employee: { id: employeeId },
+        leaveType: rule.leaveType,
+        used: 0,
+        totalAllowed: rule.maxAllowed || 0,
+        carryForwarded: rule.carryForwardMax || 0,
+        year: new Date().getFullYear(),
+      });
+      await queryRunner.manager.save(leaveBalance);
+
+      // Commit transaction
+      await queryRunner.commitTransaction();
+
+      return new ResponseDto(HttpStatus.CREATED, 'Leave rule assigned successfully', savedAssignment);
+    } catch (error) {
+      // Rollback transaction on error
+      await queryRunner.rollbackTransaction();
+      console.error('Error assigning leave rule:', error.message || error);
+      return new ResponseDto(HttpStatus.INTERNAL_SERVER_ERROR, 'Failed to assign leave rule', null);
+    } finally {
+      // Release query runner
+      await queryRunner.release();
     }
-
-    const rule = await queryRunner.manager.findOne(LeaveRule, { where: { id: ruleId } });
-    if (!rule) {
-      return new ResponseDto(HttpStatus.NOT_FOUND, 'Leave rule not found', null);
-    }
-
-    // Check if assignment already exists
-    const existingAssignment = await queryRunner.manager.findOne(EmployeeLeaveRule, {
-      where: { employee: { id: employeeId }, rule: { id: ruleId } },
-    });
-    if (existingAssignment) {
-      return new ResponseDto(HttpStatus.BAD_REQUEST, 'Leave rule already assigned to employee', null);
-    }
-
-    // Create and save EmployeeLeaveRule
-    const assignment = this.employeeLeaveRuleRepository.create({
-      employee: { id: employeeId },
-      rule: { id: ruleId },
-    });
-    const savedAssignment = await queryRunner.manager.save(assignment);
-
-    // Create and save LeaveBalance with predefined values
-    const leaveBalance = this.leaveBalancesRepository.create({
-      employee: { id: employeeId },
-      leaveType: rule.leaveType, // Assume LeaveRule has a leaveType field
-      used: 0,
-      totalAllowed: rule.maxAllowed || 0, // Assume LeaveRule has maxDays or similar
-      carryForwarded: rule.carryForwardMax||0,
-      year: new Date().getFullYear(),
-
-    });
-    await queryRunner.manager.save(leaveBalance);
-
-    // Commit transaction
-    await queryRunner.commitTransaction();
-
-    return new ResponseDto(HttpStatus.CREATED, 'Leave rule assigned successfully', savedAssignment);
-  } catch (error) {
-    // Rollback transaction on error
-    await queryRunner.rollbackTransaction();
-    console.error('Error assigning leave rule:', error.message || error);
-    return new ResponseDto(HttpStatus.INTERNAL_SERVER_ERROR, 'Failed to assign leave rule', null);
-  } finally {
-    // Release query runner
-    await queryRunner.release();
   }
-}
 
-async unassignLeaveRule(employeeId: number, ruleId: number): Promise<ResponseDto<boolean>> {
+  async unassignLeaveRule(employeeId: number, ruleId: number): Promise<ResponseDto<boolean>> {
     const queryRunner = this.employeeLeaveRuleRepository.manager.connection.createQueryRunner();
     await queryRunner.startTransaction();
   
@@ -427,11 +548,9 @@ async unassignLeaveRule(employeeId: number, ruleId: number): Promise<ResponseDto
         },
       });
       
-      if (leave!==null) {
+      if (leave !== null) {
         return new ResponseDto(HttpStatus.NOT_FOUND, 'Rule cannot be unassigned as leaves are present for this rule', false);
       }
-
-
       
       // Remove the assignment
       await queryRunner.manager.remove(existingAssignment);
@@ -478,7 +597,7 @@ async unassignLeaveRule(employeeId: number, ruleId: number): Promise<ResponseDto
   async findAllRules(orgId: number): Promise<ResponseDto<LeaveRule[]>> {
     try {
       const leaveRules = await this.leaveRuleRepository.find({
-        where: { organization: { orgId } }, // Use the relationship field
+        where: { organization: { orgId } },
       });
   
       if (leaveRules.length === 0) {
@@ -495,11 +614,12 @@ async unassignLeaveRule(employeeId: number, ruleId: number): Promise<ResponseDto
       );
     }
   }
+
   async findLeaveRulesByEmployee(id: number): Promise<ResponseDto<EmployeeLeaveRule[]>> {
     try {
       const leaveRules = await this.employeeLeaveRuleRepository.find({
-        where: { employee: { id } }, // Filter by employee ID
-        relations: ['rule'], // Ensure the 'rule' relation is loaded
+        where: { employee: { id } },
+        relations: ['rule'],
       });
   
       if (!leaveRules || leaveRules.length === 0) {
@@ -516,7 +636,7 @@ async unassignLeaveRule(employeeId: number, ruleId: number): Promise<ResponseDto
   async findLeaveBalanceByEmp(employeeId: number): Promise<ResponseDto<LeaveBalances[]>> {
     try {
       const leaveRules = await this.leaveBalancesRepository.find({
-        where: { employee: { id:employeeId} }, // Use the relationship field
+        where: { employee: { id: employeeId } },
       });
   
       if (leaveRules.length === 0) {
@@ -685,7 +805,7 @@ async unassignLeaveRule(employeeId: number, ruleId: number): Promise<ResponseDto
         const balance = await this.leaveBalancesRepository.findOne({
           where: {
             employee: { id: leave.employee.id },
-            leaveType: leave.leaveType,
+            leaveType: LeaveType[leave.leaveType as keyof typeof LeaveType],
             year: new Date().getFullYear(),
           },
         });
@@ -729,6 +849,21 @@ async unassignLeaveRule(employeeId: number, ruleId: number): Promise<ResponseDto
       console.error('Error updating leave status:', error);
       return new ResponseDto(HttpStatus.INTERNAL_SERVER_ERROR, 'Failed to update leave status', null);
     }
+  }
+
+  async findPendingLeavesByEmployees(employeeIds: number[]): Promise<ResponseDto<Leave[]>> {
+    const leaves = await this.leaveRepository.find({
+      where: {
+        employeeId: In(employeeIds),
+        status: LeaveStatus.PENDING,
+      },
+      relations: ['employee'], 
+    });
+    return { 
+      statusCode: HttpStatus.OK,
+      data: leaves, 
+      message: 'Pending leaves for employees retrieved successfully' 
+    };
   }
 
 }

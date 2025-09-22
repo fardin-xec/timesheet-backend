@@ -1,19 +1,25 @@
-// src/data-source.ts
 import { DataSource } from 'typeorm';
-import { ConfigService } from '@nestjs/config';
+import * as path from 'path';
 import * as dotenv from 'dotenv';
-
 dotenv.config();
 
-const configService = new ConfigService();
+const isCompiled = path.extname(__filename) === '.js';
+const entitiesPath = isCompiled
+  ? path.join(__dirname, 'entities', '*.js')
+  : path.join(__dirname, 'entities', '*.ts');
+const migrationsPath = isCompiled
+  ? path.join(__dirname, 'migrations', '*.js')
+  : path.join(__dirname, 'migrations', '*.ts');
 
-export default new DataSource({
+export const AppDataSource = new DataSource({
   type: 'postgres',
-  host: configService.get<string>('DB_HOST'),
-  port: configService.get<number>('DB_PORT'),
-  username: configService.get<string>('DB_USERNAME'),
-  password: configService.get<string>('DB_PASSWORD'),
-  database: configService.get<string>('DB_NAME'),
-  entities: ['src/**/*.entity{.ts,.js}'],
-  migrations: ['src/migrations/*{.ts,.js}'],
+  host: process.env.DB_HOST,
+  port: parseInt(process.env.DB_PORT || '5432'),
+  username: process.env.DB_USERNAME,
+  password: process.env.DB_PASSWORD,
+  database: process.env.DB_NAME,
+  synchronize: false,
+  logging: true,
+  entities: [entitiesPath],
+  migrations: [migrationsPath],
 });

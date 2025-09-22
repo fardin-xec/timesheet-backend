@@ -1,10 +1,11 @@
-import { Controller, Post, Param, Patch, Body, Get,Delete, Res, Query, ParseIntPipe, HttpException, HttpStatus, UseGuards, DefaultValuePipe, StreamableFile } from '@nestjs/common';
+import { Controller, Post, Param, Patch, Body, Get,Delete, Res, Query, ParseIntPipe, HttpException, HttpStatus, UseGuards, DefaultValuePipe, StreamableFile, Put } from '@nestjs/common';
 import { PayrollService } from './payroll.service';
 import { UpdatePayrollDto } from './dto/update-payroll.dto';
 import { Response } from 'express';
 import { ResponseDto } from '../dto/response.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import { ApiOperation, ApiParam, ApiResponse } from '@nestjs/swagger';
+import { ApiBody, ApiOperation, ApiParam, ApiResponse } from '@nestjs/swagger';
+import { BulkUpdatePayrollDto } from './dto/bulk-update-payroll.dto';
 
 @Controller('payroll')
 export class PayrollController {
@@ -107,6 +108,29 @@ export class PayrollController {
       throw new HttpException(error.message || 'Failed to reject payroll', HttpStatus.BAD_REQUEST);
     }
   }
+
+  @UseGuards(JwtAuthGuard)
+  @Put('bulkApprove')
+  async bulkUpdatePayroll(
+    @Body() bulkUpdatePayrollDto: BulkUpdatePayrollDto,
+  ): Promise<ResponseDto<any[]>> {
+    try {
+      const data = await this.payrollService.bulkUpdatePayroll(bulkUpdatePayrollDto.data);
+      
+      if (!data || data.length === 0) {
+        return new ResponseDto(HttpStatus.NOT_FOUND, 'No payroll records updated', []);
+      }
+      
+      return new ResponseDto(HttpStatus.OK, 'Payroll records updated successfully', data);
+    } catch (error) {
+      console.error('Controller error in bulk update:', error);
+      throw new HttpException(
+        error.message || 'Failed to update payroll records', 
+        HttpStatus.BAD_REQUEST
+      );
+    }
+  }
+
 
   @UseGuards(JwtAuthGuard)
   @Get('presignedUrl/:id')

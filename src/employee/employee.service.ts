@@ -218,6 +218,19 @@ export class EmployeeService {
       throw new Error('Failed to retrieve employees with leaves.');
     }
   }
-    
+  // Find the last employee based on employeeId
+  async findLastEmployee(): Promise<Employee | null> {
+    try {
+      const lastEmployee = await this.employeeRepository
+        .createQueryBuilder('employee')
+        .orderBy('employee.employeeId', 'DESC') // Sort by employeeId in descending order
+        .getOne(); // Get the first result (highest employeeId)
+
+      return lastEmployee || null; // Return the employee or null if none exists
+    } catch (error) {
+      console.error('Error fetching last employee:', error);
+      throw new Error('Failed to fetch last employee');
+    }
+  }
 
 }

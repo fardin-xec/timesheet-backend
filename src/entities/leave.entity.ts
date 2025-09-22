@@ -1,4 +1,4 @@
-import { Entity, Column, PrimaryGeneratedColumn, ManyToOne, JoinColumn, CreateDateColumn, UpdateDateColumn } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn, CreateDateColumn, UpdateDateColumn } from 'typeorm';
 import { Employee } from './employees.entity';
 
 export enum LeaveType {
@@ -14,7 +14,11 @@ export enum LeaveStatus {
   PENDING = 'pending',
   APPROVED = 'approved',
   REJECTED = 'rejected',
-  CANCELLED = 'cancelled',
+}
+
+export enum HalfDayType {
+  FIRST_HALF = 'first_half',
+  SECOND_HALF = 'second_half',
 }
 
 @Entity('leaves')
@@ -22,43 +26,58 @@ export class Leave {
   @PrimaryGeneratedColumn()
   id: number;
 
-  @Column({ name: 'employee_id', nullable: true })
+  @Column({ name: 'employee_id' })
   employeeId: number;
 
+ @Column({ default: 'annual' }) // ✅ Replace 'annual' with a valid default
+leaveType: string;
 
-  @ManyToOne(() => Employee, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'employee_id' })
-  employee: Employee;
-
-  @Column({ name:'leave_type',type: 'enum', enum: LeaveType })
-  leaveType: LeaveType;
-
-  @Column({ name:'start_date',type: 'date' })
+  @Column({ type: 'date', nullable: true })
   startDate: Date;
 
-  @Column({name:'end_date', type: 'date' })
+  @Column({ type: 'date',nullable: true })
   endDate: Date;
+
+  @Column({ type: 'decimal', precision: 4, scale: 1 ,default: 1 })
+  appliedDays: number;
 
   @Column({ type: 'text', nullable: true })
   reason: string;
 
-  @Column({ type: 'enum', enum: LeaveStatus, default: LeaveStatus.PENDING })
+  @Column({
+    type: 'enum',
+    enum: LeaveStatus,
+    default: LeaveStatus.PENDING,
+  })
   status: LeaveStatus;
 
   @Column({ name: 'approved_by', nullable: true })
   approvedBy: number;
 
-  @ManyToOne(() => Employee, { nullable: true, onDelete: 'SET NULL' })
-  @JoinColumn({ name: 'approved_by' })
-  manager: Employee;
+  @Column({ type: 'boolean', default: false })
+  isHalfDay: boolean;
 
-  @Column({name: 'applied_days', type: 'numeric', precision: 5, scale: 2 })
-  appliedDays: number;
+  @Column({
+    type: 'enum',
+    enum: HalfDayType,
+    nullable: true,
+  })
+  halfDayType: HalfDayType;
 
-  @CreateDateColumn()
+  @Column({ type: 'text', nullable: true })
+  attachmentUrl: string;
+
+  @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 
-  @UpdateDateColumn()
+  @UpdateDateColumn({ name: 'updated_at' })
   updatedAt: Date;
-}
 
+  @ManyToOne(() => Employee, { eager: true })
+  @JoinColumn({ name: 'employee_id' })
+  employee: Employee;
+
+  @ManyToOne(() => Employee, { nullable: true })
+  @JoinColumn({ name: 'approved_by' })
+  approver: Employee;
+}
