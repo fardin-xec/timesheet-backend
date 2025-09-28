@@ -22,7 +22,7 @@ export class AttendanceCronService {
   ) {}
   // CronExpression.EVERY_DAY_AT_1AM
   // "* * * * *"
-  @Cron(CronExpression.EVERY_5_MINUTES, { name: 'createDailyAttendance' })
+  @Cron(CronExpression.EVERY_DAY_AT_1AM, { name: 'createDailyAttendance' })
   async createDailyAttendance() {
     this.logger.log('Starting daily attendance creation cron job');
     const today = new Date(); // Current date (should be April 21, 2025)
