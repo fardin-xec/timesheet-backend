@@ -64,8 +64,8 @@ leaveType: string;
   })
   halfDayType: HalfDayType;
 
-  @Column({ type: 'text', nullable: true })
-  attachmentUrl: string;
+  @Column({ name: 'document_id', type: 'uuid', nullable: true, default: null })
+  documentId: string;
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;

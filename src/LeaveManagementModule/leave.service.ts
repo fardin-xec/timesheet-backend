@@ -9,10 +9,11 @@ import { Employee } from '../entities/employees.entity';
 import { CreateLeaveDto } from './dto/create-leave.dto';
 import { UpdateLeaveDto } from './dto/update-leave.dto';
 import { ResponseDto } from '../dto/response.dto';
-import { EmailService } from 'src/email/email.service';
+import { EmailService } from 'src/email/smtpEmail.service';
 
 @Injectable()
 export class LeaveService {
+  documentsService: any;
   constructor(
     @InjectRepository(Leave)
     private leaveRepository: Repository<Leave>,
@@ -123,7 +124,7 @@ export class LeaveService {
 
   async createLeave(createLeaveDto: CreateLeaveDto): Promise<ResponseDto<Leave>> {
     try {
-      const { employeeId, leaveType, startDate, endDate, isHalfDay, halfDayType, attachmentUrl } = createLeaveDto;
+      const { employeeId, leaveType, startDate, endDate, isHalfDay, halfDayType, doucmentId } = createLeaveDto;
       
       // Validate employee exists
       const employee = await this.employeeRepository.findOne({ where: { id: employeeId } });
@@ -141,7 +142,7 @@ export class LeaveService {
       }
 
       // Validate Emergency Leave attachment requirement
-      if (leaveType.toLowerCase() === 'emergency' && !attachmentUrl) {
+      if (leaveType.toLowerCase() === 'emergency' && !doucmentId) {
         return new ResponseDto(HttpStatus.BAD_REQUEST, 'Please upload supporting document to apply for Emergency Leave.', null);
       }
 
@@ -190,7 +191,7 @@ export class LeaveService {
         status: LeaveStatus.PENDING,
         isHalfDay: isHalfDay || false,
         halfDayType: isHalfDay ? halfDayType : null,
-        attachmentUrl: attachmentUrl || null,
+        documentId: doucmentId||null,
       });
   
       const savedLeave = await this.leaveRepository.save(leave);
@@ -270,7 +271,6 @@ export class LeaveService {
         Total Days: ${appliedDays}${leave.isHalfDay ? ` (Half Day - ${leave.halfDayType})` : ''}
         Status: ${leave.status}
         Reason: ${leave.reason || 'Not specified'}
-        ${leave.attachmentUrl ? `Supporting Document: ${leave.attachmentUrl}` : ''}
         
         This notification was sent automatically by the HR Management System.
       `;
@@ -292,7 +292,6 @@ export class LeaveService {
             <p><strong>Total Days:</strong> ${appliedDays}${leave.isHalfDay ? ` (Half Day - ${leave.halfDayType})` : ''}</p>
             <p><strong>Status:</strong> <span style="color: #ff9800; font-weight: bold;">${leave.status}</span></p>
             <p><strong>Reason:</strong> ${leave.reason || 'Not specified'}</p>
-            ${leave.attachmentUrl ? `<p><strong>Supporting Document:</strong> <a href="${leave.attachmentUrl}">View Document</a></p>` : ''}
           </div>
           
           <div style="background-color: #f5f5f5; padding: 10px; border-radius: 4px; font-size: 12px; color: #666;">
@@ -450,6 +449,14 @@ export class LeaveService {
         balance.used -= leave.appliedDays;
         await this.leaveBalancesRepository.save(balance);
       }
+
+       if (leave.documentId) {
+      try {
+        await this.documentsService.deleteDocument(leave.documentId);
+      } catch (error) {
+        console.error('Failed to delete document:', error);
+      }
+    }
 
       await this.leaveRepository.remove(leave);
 
@@ -865,5 +872,48 @@ export class LeaveService {
       message: 'Pending leaves for employees retrieved successfully' 
     };
   }
+
+ async deleteLeavesByEmployeeId(employeeId: number): Promise<ResponseDto<void>> {
+  try {
+    // 1. Find all leaves for the employee
+    const leaves = await this.leaveRepository.find({
+      where: { employee: { id: employeeId } },
+      relations: ['employee'],
+    });
+
+    if (!leaves.length) {
+      return new ResponseDto(HttpStatus.NOT_FOUND, 'No leaves found for this employee', null);
+    }
+
+    // 2. For each leave: delete document if exists
+    for (const leave of leaves) {
+      if (leave.documentId) {
+        try {
+          await this.documentsService.deleteDocument(leave.documentId);
+        } catch (error) {
+          console.error(`Failed to delete document (${leave.documentId}):`, error);
+        }
+      }
+    }
+
+    // 3. Delete all leave balances for the employee
+    await this.leaveBalancesRepository.delete({
+      employee: { id: employeeId }
+    });
+
+    // 4. Delete all leave records for the employee
+    await this.leaveRepository.delete({
+      employee: { id: employeeId }
+    });
+
+    return new ResponseDto(HttpStatus.OK, 'All leaves and balances deleted successfully', null);
+
+  } catch (error) {
+    console.error('Error deleting leaves:', error);
+    return new ResponseDto(HttpStatus.INTERNAL_SERVER_ERROR, 'Failed to delete leaves', null);
+  }
+}
+
+
 
 }

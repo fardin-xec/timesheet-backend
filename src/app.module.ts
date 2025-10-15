@@ -34,6 +34,9 @@ import { Payslip } from './entities/payslips.entity';
 import { TaxRegime } from './entities/tax-regime.entity';
 import { EmailModule } from './email/email.module';
 import { HealthModule } from './health/health.module';
+import { DocumentsModule } from './documents/documents.module';
+import { AuditTrail } from './entities/audit-trail.entity';
+import { AuditTrailModule } from './audit-trail/audit-trail.module';
 
 @Module({
   imports: [
@@ -67,7 +70,8 @@ import { HealthModule } from './health/health.module';
         Attendance,
         Payroll,
         Payslip,
-        TaxRegime
+        TaxRegime,
+        AuditTrail,
       ],
       synchronize: true,
     }),
@@ -86,7 +90,9 @@ import { HealthModule } from './health/health.module';
     AttendanceModule,
     PayrollModule,
     EmailModule,
-    HealthModule
+    HealthModule,
+    DocumentsModule,
+    AuditTrailModule,
   ],
 })
 export class AppModule {}

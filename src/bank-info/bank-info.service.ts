@@ -10,7 +10,7 @@ export class BankInfoService {
     private bankInfoRepository: Repository<BankInfo>,
   ) {}
 
-  async create(BankInfo: BankInfo): Promise<BankInfo> {
+  async create(BankInfo:  Partial<BankInfo>): Promise<BankInfo> {
 
     
     

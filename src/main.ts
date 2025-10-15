@@ -3,15 +3,35 @@ import { AppModule } from './app.module';
 import { ConfigService } from '@nestjs/config';
 import { HttpExceptionFilter } from './filters/http-exception.filter';
 import { TypeORMError } from 'typeorm/error/TypeORMError';
+import { NestExpressApplication } from '@nestjs/platform-express';
+import { join } from 'path';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+    const app = await NestFactory.create<NestExpressApplication>(AppModule);
 
   // Get the configuration service to access environment variables
   const configService = app.get(ConfigService);
 
   // Set the port from the environment variable
   const port = configService.get<number>('PORT');
+
+
+
+  app.useStaticAssets(join(__dirname, '..', 'uploads'), {
+    prefix: '/uploads/',
+  });
+  const payslipsPath = join(__dirname, '..', 'payslips')
+  app.useStaticAssets(payslipsPath, {
+  prefix: '/payslips/',
+  setHeaders: (res, path, stat) => {
+    res.set('Access-Control-Allow-Origin', 'http://localhost:3001'); // Specific origin, not '*'
+    res.set('Access-Control-Allow-Methods', 'GET');
+    res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    res.set('Access-Control-Allow-Credentials', 'true');
+  },
+})
+  
+  
 
   // Enable CORS if needed
   app.enableCors();

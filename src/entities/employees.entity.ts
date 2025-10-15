@@ -1,11 +1,23 @@
 // src/entities/employee.entity.ts
-import { Column, CreateDateColumn, Entity, JoinColumn, ManyToOne, OneToMany, OneToOne, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
+
+import { 
+  Column, 
+  CreateDateColumn, 
+  Entity, 
+  JoinColumn, 
+  ManyToOne, 
+  OneToMany, 
+  OneToOne, 
+  PrimaryGeneratedColumn, 
+  UpdateDateColumn 
+} from 'typeorm';
 import { Organization } from './organizations.entity';
 import { User } from './users.entity';
 import { Personal } from './personal.entity';
 import { BankInfo } from './bank-info.entity';
 import { Leave } from './leave.entity';
 import { Payroll } from './payrolls.entity';
+import { AuditTrail } from './audit-trail.entity';
 
 export enum EmployeeStatus {
   ACTIVE = 'active',
@@ -19,7 +31,14 @@ export enum Gender {
   OTHER = 'other'
 }
 
-
+export enum InactivationReason {
+  RESIGNATION = 'resignation',
+  TERMINATION = 'termination',
+  RETIREMENT = 'retirement',
+  LONG_LEAVE = 'long_leave',
+  CONTRACT_ENDED = 'contract_ended',
+  OTHER = 'other',
+}
 
 @Entity('employees')
 export class Employee {
@@ -32,7 +51,7 @@ export class Employee {
   @Column({ name: 'first_name', length: 50 })
   firstName: string;
 
-  @Column({ name: 'middle_name', length: 50,  nullable: true })
+  @Column({ name: 'middle_name', length: 50, nullable: true })
   midName: string;
 
   @Column({ name: 'last_name', length: 50 })
@@ -57,7 +76,7 @@ export class Employee {
   @Column({ length: 255, nullable: true })
   avatar: string;
 
-  @Column({ length: 20, nullable: true })
+  @Column({ length: 20, nullable: true, unique: true })
   phone: string;
 
   @Column({ type: 'text', nullable: true })
@@ -82,7 +101,7 @@ export class Employee {
   @Column({ name: 'probation_period', default: 0 })
   probationPeriod: number;
 
-  @Column({name: 'employment_type', length: 100, nullable: true })
+  @Column({ name: 'employment_type', length: 100, nullable: true })
   employmentType: string;
 
   @Column({ name: 'joining_date', type: 'date' })
@@ -96,6 +115,21 @@ export class Employee {
 
   @Column({ type: 'varchar', length: 3, default: 'USD' })
   currency: string;
+
+ @Column({
+    name: 'inactivation_reason',
+    type: 'enum',
+    enum: InactivationReason,
+    nullable: true,
+  })
+  inactivationReason: InactivationReason;
+
+  @Column({ name: 'inactivation_remarks', type: 'text', nullable: true })
+  inactivationRemarks: string;
+
+  @Column({ name: 'inactivation_date', type: 'date', nullable: true })
+  inactivationDate: Date;
+
 
   @CreateDateColumn()
   createdAt: Date;
@@ -111,6 +145,19 @@ export class Employee {
 
   @Column({ name: 'report_to', nullable: true })
   reportTo: number;
+
+  // Extra identification fields
+  @Column({ name: 'qid', length: 50, nullable: true })
+  qid: string;
+
+  @Column({ name: 'qid_expiration', type: 'date', nullable: true })
+  qidExpiration: Date;
+
+  @Column({ name: 'passport_number', length: 50, nullable: true })
+  passportNumber: string;
+
+  @Column({ name: 'passport_expiration', type: 'date', nullable: true })
+  passportExpiration: Date;
 
   // Relations
   @OneToOne(() => User)
@@ -132,11 +179,14 @@ export class Employee {
   personalInfo: Personal;
 
   @OneToMany(() => BankInfo, bankInfo => bankInfo.employee)
-  bankAccounts: BankInfo;
+  bankAccounts: BankInfo[];
 
-  @OneToMany(() => Leave, leave => leave.employee) // Add this relation
+  @OneToMany(() => Leave, leave => leave.employee)
   leaves: Leave[];
 
-  @OneToMany(() => Payroll, payroll => payroll.employee) // Add this relation
+  @OneToMany(() => Payroll, payroll => payroll.employee)
   payrolls: Payroll[];
+
+  @OneToMany(() => AuditTrail, auditTrail => auditTrail.employee)
+  auditTrails: AuditTrail[];
 }

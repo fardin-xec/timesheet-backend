@@ -14,6 +14,9 @@ import { Organization } from '../entities/organizations.entity';
 import { S3 } from 'aws-sdk';
 import { Readable } from 'stream';
 import { integer } from 'aws-sdk/clients/cloudfront';
+import path from 'path';
+import { promises as fs } from 'fs';
+
 
 // In-memory cache for presigned URLs
 const presignedUrlCache = new Map<string, { url: string; expires: number; size: number }>();
@@ -39,7 +42,7 @@ export class PayrollService {
     private organizationRepository: Repository<Organization>,
     private pdfService: PdfService,
   ) {}
-
+// EVERY_1ST_DAY_OF_MONTH_AT_MIDNIGHT,
   @Cron(CronExpression.EVERY_1ST_DAY_OF_MONTH_AT_MIDNIGHT, {
     name: 'monthlyPayrollGeneration',
     timeZone: 'UTC',
@@ -353,70 +356,37 @@ export class PayrollService {
       if (!payslip) {
         throw new NotFoundException('Payslip not found');
       }
-
-      // Extract the S3 key from the pdfUrl
-      const key = payslip.pdfUrl.split('/').slice(-2).join('/');
-      if (!key) {
-        throw new HttpException('Invalid S3 key derived from payslip URL', HttpStatus.BAD_REQUEST);
+      const url = payslip.pdfUrl;
+     // Check if file exists and get its stats
+    let fileSize: number;
+    try {
+      const stats = await fs.stat(url);
+      
+      // Verify it's a file and not a directory
+      if (!stats.isFile()) {
+        throw new HttpException('Path is not a file', HttpStatus.INTERNAL_SERVER_ERROR);
       }
 
-      // Check if a valid presigned URL exists in the cache
-      const cached = presignedUrlCache.get(key);
-      const now = Date.now();
-      if (cached && cached.expires > now) {
-        this.logger.log(`Returning cached presigned URL for key: ${key}`);
-        return { url: cached.url, size: cached.size };
+      fileSize = stats.size;
+      
+      this.logger.log(`Found payslip file at: ${url}, size: ${fileSize} bytes`);
+    } catch (error) {
+      if (error.code === 'ENOENT') {
+        throw new NotFoundException('PDF file not found in file system');
       }
+      throw new HttpException(
+        `Error accessing file: ${error.message}`,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
 
-      // Initialize S3 client
-      const s3 = new S3({
-        region: process.env.AWS_REGION,
-        accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-      });
+    // Optionally verify it's a PDF by checking file extension
+    const ext = path.extname(url).toLowerCase();
+    if (ext !== '.pdf') {
+      this.logger.warn(`File is not a PDF: ${url}`);
+    }
 
-      // Verify the object exists in S3 and get its metadata
-      const params = {
-        Bucket: process.env.S3_BUCKET,
-        Key: key,
-      };
-
-      let headObject;
-      try {
-        headObject = await s3.headObject(params).promise();
-        if (!headObject.ContentType || !headObject.ContentType.includes('application/pdf')) {
-          throw new HttpException('S3 object is not a valid PDF', HttpStatus.INTERNAL_SERVER_ERROR);
-        }
-      } catch (error) {
-        if (error.code === 'NotFound') {
-          throw new NotFoundException('PDF not found in S3');
-        }
-        throw error;
-      }
-
-      // Generate a presigned URL
-      const url = await s3.getSignedUrlPromise('getObject', {
-        ...params,
-        Expires: 60 * 15, // URL expires in 15 minutes
-      });
-
-      // Cache the presigned URL and file size
-      const fileSize = headObject.ContentLength || 0;
-      presignedUrlCache.set(key, {
-        url,
-        expires: now + (60 * 15 * 1000), // Cache for 15 minutes
-        size: fileSize,
-      });
-
-      // Clean up expired cache entries
-      for (const [cachedKey, value] of presignedUrlCache.entries()) {
-        if (value.expires <= now) {
-          presignedUrlCache.delete(cachedKey);
-        }
-      }
-
-      this.logger.log(`Generated presigned URL for key: ${key}, size: ${fileSize} bytes`);
-      return { url, size: fileSize };
+    return { url, size: fileSize };
     } catch (error) {
       this.logger.error('Error generating presigned URL for payslip:', error.message, error.stack);
       throw new HttpException(
@@ -459,59 +429,58 @@ export class PayrollService {
       );
     }
   }
-  async deletePayroll(id: number): Promise<void> {
-    try {
-      const payroll = await this.payrollRepository.findOne({ where: { id } });
-      if (!payroll) {
-        throw new NotFoundException('Payroll not found');
+
+
+async deletePayroll(id: number): Promise<void> {
+  try {
+    const payroll = await this.payrollRepository.findOne({ where: { id } });
+    if (!payroll) {
+      throw new NotFoundException('Payroll not found');
+    }
+
+    // First check if there's an associated payslip
+    const payslip = await this.payslipRepository.findOne({ where: { payrollId: id } });
+    if (payslip) {
+      // Extract local file path from the URL (assuming URL is relative, e.g. /uploads/payslips/file.pdf)
+      // Adjust process cwd and remove leading slash as needed
+      let filePath = payslip.pdfUrl;
+      if (filePath.startsWith('/')) {
+        filePath = filePath.slice(1);
       }
-  
-      // First check if there's an associated payslip
-      const payslip = await this.payslipRepository.findOne({ where: { payrollId: id } });
-      if (payslip) {
-        // Extract the S3 key from the pdfUrl
-        const key = payslip.pdfUrl.split('/').slice(-2).join('/');
-        if (key) {
-          // Initialize S3 client
-          const s3 = new S3({
-            region: process.env.AWS_REGION,
-            accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-            secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-          });
-  
-          // Delete from S3
-          try {
-            await s3.deleteObject({
-              Bucket: process.env.S3_BUCKET,
-              Key: key,
-            }).promise();
-            this.logger.log(`Deleted payslip PDF from S3: ${key}`);
-            
-            // Remove from cache if exists
-            if (presignedUrlCache.has(key)) {
-              presignedUrlCache.delete(key);
-            }
-          } catch (s3Error) {
-            this.logger.error(`Failed to delete payslip PDF from S3: ${s3Error.message}`, s3Error.stack);
-            // Continue with deletion even if S3 deletion fails
-          }
-          
-          // Delete the payslip record
-          await this.payslipRepository.delete(payslip.id);
+      filePath = path.join(process.cwd(), filePath);
+
+      // Delete file from filesystem
+      try {
+        await fs.unlink(filePath);
+        this.logger.log(`Deleted payslip PDF from filesystem: ${filePath}`);
+
+        // Remove from cache if exists
+        if (presignedUrlCache.has(filePath)) {
+          presignedUrlCache.delete(filePath);
+        }
+      } catch (fsErr: any) {
+        if (fsErr.code !== 'ENOENT') { // Ignore if file doesn't exist
+          this.logger.error(`Failed to delete payslip PDF file: ${fsErr.message}`, fsErr.stack);
         }
       }
-  
-      // Delete the payroll record
-      await this.payrollRepository.delete(id);
-      this.logger.log(`Payroll with ID ${id} has been deleted`);
-    } catch (error) {
-      this.logger.error(`Service error deleting payroll: ${error.message}`, error.stack);
-      throw new HttpException(
-        error.message || 'Failed to delete payroll',
-        error instanceof NotFoundException ? HttpStatus.NOT_FOUND : HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+
+      // Delete the payslip record
+      await this.payslipRepository.delete(payslip.id);
     }
+
+    // Delete the payroll record
+    await this.payrollRepository.delete(id);
+    this.logger.log(`Payroll with ID ${id} has been deleted`);
+
+  } catch (error: any) {
+    this.logger.error(`Service error deleting payroll: ${error.message}`, error.stack);
+    throw new HttpException(
+      error.message || 'Failed to delete payroll',
+      error instanceof NotFoundException ? HttpStatus.NOT_FOUND : HttpStatus.INTERNAL_SERVER_ERROR,
+    );
   }
+}
+
 
   async bulkUpdatePayroll(updates: { id: integer; status?: string; otherAllowances?: number }[]): Promise<Payroll[]> {
     if (!updates || updates.length === 0) {
@@ -569,4 +538,57 @@ export class PayrollService {
 
     return updatedPayrolls;
   }
+
+
+async deletePayrollsByEmployeeId(employeeId: number): Promise<void> {
+  try {
+    // Find all payrolls for the employee
+    const payrolls = await this.payrollRepository.find({
+      where: { employee: { id: employeeId } }
+    });
+
+    if (!payrolls.length) {
+      this.logger.log(`No payrolls found for employee ID ${employeeId}`);
+      return;
+    }
+
+    // For each payroll, handle payslip file & record deletion
+    for (const payroll of payrolls) {
+      const payslip = await this.payslipRepository.findOne({ where: { payrollId: payroll.id } });
+      if (payslip) {
+        let filePath = payslip.pdfUrl;
+        if (filePath.startsWith('/')) {
+          filePath = filePath.slice(1);
+        }
+        filePath = path.join(process.cwd(), filePath);
+
+        try {
+          await fs.unlink(filePath);
+          this.logger.log(`Deleted payslip PDF from filesystem: ${filePath}`);
+
+          if (presignedUrlCache.has(filePath)) {
+            presignedUrlCache.delete(filePath);
+          }
+        } catch (fsErr: any) {
+          if (fsErr.code !== 'ENOENT') {
+            this.logger.error(`Failed to delete payslip PDF file: ${fsErr.message}`, fsErr.stack);
+          }
+        }
+        await this.payslipRepository.delete(payslip.id);
+      }
+    }
+
+    // Bulk delete all payroll records for employee
+    await this.payrollRepository.delete({ employee: { id: employeeId } });
+    this.logger.log(`Deleted all payrolls for employee ID ${employeeId}`);
+
+  } catch (error: any) {
+    this.logger.error(`Error deleting payrolls for employee ID ${employeeId}: ${error.message}`, error.stack);
+    throw new HttpException(
+      `Failed to delete payrolls for employee ID ${employeeId}`,
+      HttpStatus.INTERNAL_SERVER_ERROR,
+    );
+  }
+}
+
 }

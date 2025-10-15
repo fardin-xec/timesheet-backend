@@ -12,8 +12,8 @@ export class AuthController {
 
   @Post('login')
   async login(@Request() req): Promise<ResponseDto<{ access_token: string }>> {
-    const { email, password } = req.body;
-    const user = await this.authService.validateUser(email, password);
+    const { email, password , mobile } = req.body;
+    const user = await this.authService.validateUser(email, password,mobile);
 
     if (!user) {
       return new ResponseDto(HttpStatus.UNAUTHORIZED, 'Invalid credentials');

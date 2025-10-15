@@ -19,5 +19,6 @@ import { Organization } from '../entities/organizations.entity';
     ],
     providers: [PayrollService, PdfService],
     controllers: [PayrollController],
+     exports: [PayrollService],
   })
   export class PayrollModule {}

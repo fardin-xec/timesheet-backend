@@ -44,5 +44,5 @@ export class CreateLeaveDto {
 
   @IsString()
   @IsOptional()
-  attachmentUrl?: string;
+  doucmentId?: string;
 }
