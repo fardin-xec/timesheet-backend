@@ -22,7 +22,8 @@ import { AuditTrail } from './audit-trail.entity';
 export enum EmployeeStatus {
   ACTIVE = 'active',
   INACTIVE = 'inactive',
-  ON_LEAVE = 'on_leave'
+  ON_LEAVE = 'on_leave',
+  PENDING_INACTIVE= 'pending_inactive'
 }
 
 export enum Gender {

@@ -31,6 +31,16 @@ export class Personal {
   @Column({ name: 'permanent_address', type: 'text', nullable: true })
   permanentAddress: string;
 
+  @Column({ name: 'emergency_contactName', type: 'text', nullable: true })
+  emergencyContactName: string;
+
+  @Column({ name: 'emergency_contactPhone',length: 20, nullable: true })
+  emergencyContactPhone: string;
+
+ 
+  @Column({ name: 'nationality', type: 'text', nullable: true })
+  nationality: string;
+
   @CreateDateColumn()
   createdAt: Date;
 

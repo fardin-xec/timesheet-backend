@@ -109,27 +109,27 @@ export class PayrollController {
     }
   }
 
-  @UseGuards(JwtAuthGuard)
-  @Put('bulkApprove')
-  async bulkUpdatePayroll(
-    @Body() bulkUpdatePayrollDto: BulkUpdatePayrollDto,
-  ): Promise<ResponseDto<any[]>> {
-    try {
-      const data = await this.payrollService.bulkUpdatePayroll(bulkUpdatePayrollDto.data);
+  // @UseGuards(JwtAuthGuard)
+  // @Put('bulkApprove')
+  // async bulkUpdatePayroll(
+  //   @Body() bulkUpdatePayrollDto: BulkUpdatePayrollDto,
+  // ): Promise<ResponseDto<any[]>> {
+  //   try {
+  //     const data = await this.payrollService.bulkUpdatePayroll(bulkUpdatePayrollDto.data);
       
-      if (!data || data.length === 0) {
-        return new ResponseDto(HttpStatus.NOT_FOUND, 'No payroll records updated', []);
-      }
+  //     if (!data || data.length === 0) {
+  //       return new ResponseDto(HttpStatus.NOT_FOUND, 'No payroll records updated', []);
+  //     }
       
-      return new ResponseDto(HttpStatus.OK, 'Payroll records updated successfully', data);
-    } catch (error) {
-      console.error('Controller error in bulk update:', error);
-      throw new HttpException(
-        error.message || 'Failed to update payroll records', 
-        HttpStatus.BAD_REQUEST
-      );
-    }
-  }
+  //     return new ResponseDto(HttpStatus.OK, 'Payroll records updated successfully', data);
+  //   } catch (error) {
+  //     console.error('Controller error in bulk update:', error);
+  //     throw new HttpException(
+  //       error.message || 'Failed to update payroll records', 
+  //       HttpStatus.BAD_REQUEST
+  //     );
+  //   }
+  // }
 
 
   @UseGuards(JwtAuthGuard)
@@ -160,33 +160,33 @@ export class PayrollController {
     }
   }
 
-  @UseGuards(JwtAuthGuard)
-  @Get('payslip/download/:id')
-  async downloadPayslip(
-    @Param('id', ParseIntPipe) id: number,
-    @Res() res: Response,
-  ): Promise<void> {
-    try {
-      const { stream, filename } = await this.payrollService.downloadPayslipPdf(id);
-      res.set({
-        'Content-Disposition': `attachment; filename="${filename}"`,
-        'Content-Type': 'application/pdf',
-      });
-      stream.pipe(res);
-    } catch (error) {
-      console.error('Controller error downloading payslip:', error);
-      throw new HttpException('Failed to download payslip', HttpStatus.INTERNAL_SERVER_ERROR);
-    }
-  }
+  // @UseGuards(JwtAuthGuard)
+  // @Get('payslip/download/:id')
+  // async downloadPayslip(
+  //   @Param('id', ParseIntPipe) id: number,
+  //   @Res() res: Response,
+  // ): Promise<void> {
+  //   try {
+  //     const { stream, filename } = await this.payrollService.downloadPayslipPdf(id);
+  //     res.set({
+  //       'Content-Disposition': `attachment; filename="${filename}"`,
+  //       'Content-Type': 'application/pdf',
+  //     });
+  //     stream.pipe(res);
+  //   } catch (error) {
+  //     console.error('Controller error downloading payslip:', error);
+  //     throw new HttpException('Failed to download payslip', HttpStatus.INTERNAL_SERVER_ERROR);
+  //   }
+  // }
 
-  @UseGuards(JwtAuthGuard)
-  @Delete(':id')
-  @ApiOperation({ summary: 'Delete payroll record' })
-  @ApiParam({ name: 'id', type: Number })
-  @ApiResponse({ status: 204, description: 'Payroll record deleted successfully' })
-  @ApiResponse({ status: 404, description: 'Payroll not found' })
-  async deletePayroll(@Param('id', ParseIntPipe) id: number, @Res() res: Response) {
-    await this.payrollService.deletePayroll(id);
-    return res.status(HttpStatus.NO_CONTENT).send();
-  }
+  // @UseGuards(JwtAuthGuard)
+  // @Delete(':id')
+  // @ApiOperation({ summary: 'Delete payroll record' })
+  // @ApiParam({ name: 'id', type: Number })
+  // @ApiResponse({ status: 204, description: 'Payroll record deleted successfully' })
+  // @ApiResponse({ status: 404, description: 'Payroll not found' })
+  // async deletePayroll(@Param('id', ParseIntPipe) id: number, @Res() res: Response) {
+  //   await this.payrollService.deletePayroll(id);
+  //   return res.status(HttpStatus.NO_CONTENT).send();
+  // }
 }

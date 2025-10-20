@@ -37,9 +37,11 @@ import { HealthModule } from './health/health.module';
 import { DocumentsModule } from './documents/documents.module';
 import { AuditTrail } from './entities/audit-trail.entity';
 import { AuditTrailModule } from './audit-trail/audit-trail.module';
+import { Document } from './entities/document.entity';
 
 @Module({
   imports: [
+    
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: '.env',
@@ -72,6 +74,7 @@ import { AuditTrailModule } from './audit-trail/audit-trail.module';
         Payslip,
         TaxRegime,
         AuditTrail,
+        Document,
       ],
       synchronize: true,
     }),

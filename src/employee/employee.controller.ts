@@ -1,6 +1,6 @@
 import { Controller, Get, Param, Post, Body, Put, Delete, UseGuards, HttpStatus,Request } from '@nestjs/common';
 import { EmployeeService } from './employee.service';
-import { Employee, InactivationReason } from '../entities/employees.entity';
+import { Employee, EmployeeStatus, InactivationReason } from '../entities/employees.entity';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { ResponseDto } from '../dto/response.dto';
 import { UsersService } from 'src/user/user.service';
@@ -14,9 +14,10 @@ class passwordUpdateDto {
   newPassword: string;
 }
 class UpdateEmployeeStatusDto {
-  status: 'ACTIVE' | 'INACTIVE';
+  status: 'ACTIVE' | 'INACTIVE' | 'PENDING_INACTIVE';
   reason?: InactivationReason;
   remarks?: string;
+  inactivationDate?: string;
 }
 
 @Controller('employees')
@@ -235,9 +236,21 @@ export class EmployeeController {
           updateStatusDto.reason,
           updateStatusDto.remarks,
           jwtPayload.userId,
-          req,
+          updateStatusDto.inactivationDate,
+          EmployeeStatus.ACTIVE,
+
         );
-      } else if (updateStatusDto.status === 'ACTIVE') {
+      } else if (updateStatusDto.status === 'PENDING_INACTIVE') {
+         data = await this.employeeService.markAsInactive(
+          +id,
+          updateStatusDto.reason,
+          updateStatusDto.remarks,
+          jwtPayload.userId,
+          updateStatusDto.inactivationDate,
+          EmployeeStatus.PENDING_INACTIVE,
+
+        );
+      }else if (updateStatusDto.status === 'ACTIVE') {
         data = await this.employeeService.markAsActive(
           +id,
           jwtPayload.userId,

@@ -11,9 +11,11 @@ import { AuditTrailModule } from '../audit-trail/audit-trail.module'; // Import 
 import { EmailModule } from '../email/email.module'; // Import instead of providing
 import { PayrollModule } from 'src/payroll/payroll.module';
 import { LeaveManagementModule } from 'src/LeaveManagementModule/leave.module';
+import { ScheduleModule } from '@nestjs/schedule';
 
 @Module({
   imports: [
+    ScheduleModule.forRoot(),
     TypeOrmModule.forFeature([Employee]),
     forwardRef(() => PersonalModule),
     forwardRef(() => BankInfoModule),

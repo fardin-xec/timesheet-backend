@@ -11,9 +11,9 @@ import { TaxRegime } from '../entities/tax-regime.entity';
 import { PdfService } from './pdf.service';
 import { UpdatePayrollDto } from './dto/update-payroll.dto';
 import { Organization } from '../entities/organizations.entity';
-import { S3 } from 'aws-sdk';
-import { Readable } from 'stream';
-import { integer } from 'aws-sdk/clients/cloudfront';
+// import { S3 } from 'aws-sdk';
+// import { Readable } from 'stream';
+// import { integer } from 'aws-sdk/clients/cloudfront';
 import path from 'path';
 import { promises as fs } from 'fs';
 
@@ -396,148 +396,148 @@ export class PayrollService {
     }
   }
 
-  async downloadPayslipPdf(id: number): Promise<{ stream: Readable; filename: string }> {
-    try {
-      const payroll = await this.payrollRepository.findOne({ where: { id } });
-      if (!payroll) {
-        throw new NotFoundException('Payroll not found');
-      }
+  // async downloadPayslipPdf(id: number): Promise<{ stream: Readable; filename: string }> {
+  //   try {
+  //     const payroll = await this.payrollRepository.findOne({ where: { id } });
+  //     if (!payroll) {
+  //       throw new NotFoundException('Payroll not found');
+  //     }
 
-      const payslip = await this.payslipRepository.findOne({ where: { id } });
-      if (!payslip) {
-        throw new NotFoundException('Payroll not found');
-      }
-      const year = payroll.payrollMonth.getFullYear();
-      const month = payroll.payrollMonth.getMonth() + 1;      
-      const key = payslip.pdfUrl.split('/').slice(-2).join('/');
+  //     const payslip = await this.payslipRepository.findOne({ where: { id } });
+  //     if (!payslip) {
+  //       throw new NotFoundException('Payroll not found');
+  //     }
+  //     const year = payroll.payrollMonth.getFullYear();
+  //     const month = payroll.payrollMonth.getMonth() + 1;      
+  //     const key = payslip.pdfUrl.split('/').slice(-2).join('/');
      
-      const s3 = new S3();
-      const params = {
-        Bucket: process.env.S3_BUCKET,
-        Key: key,
-        Expires: 60 * 5, // 5 minutes
-      };
-      const filename = `payslip-${payroll.employeeId}-${year}-${month}.pdf`;
-      const stream = s3.getObject(params).createReadStream();
+  //     const s3 = new S3();
+  //     const params = {
+  //       Bucket: process.env.S3_BUCKET,
+  //       Key: key,
+  //       Expires: 60 * 5, // 5 minutes
+  //     };
+  //     const filename = `payslip-${payroll.employeeId}-${year}-${month}.pdf`;
+  //     const stream = s3.getObject(params).createReadStream();
 
-      return { stream, filename };
-    } catch (error) {
-      console.error('Service error downloading payslip:', error);
-      throw new HttpException(
-        error.message || 'Failed to download payslip',
-        error instanceof NotFoundException ? HttpStatus.NOT_FOUND : HttpStatus.INTERNAL_SERVER_ERROR,
-      );
-    }
-  }
-
-
-async deletePayroll(id: number): Promise<void> {
-  try {
-    const payroll = await this.payrollRepository.findOne({ where: { id } });
-    if (!payroll) {
-      throw new NotFoundException('Payroll not found');
-    }
-
-    // First check if there's an associated payslip
-    const payslip = await this.payslipRepository.findOne({ where: { payrollId: id } });
-    if (payslip) {
-      // Extract local file path from the URL (assuming URL is relative, e.g. /uploads/payslips/file.pdf)
-      // Adjust process cwd and remove leading slash as needed
-      let filePath = payslip.pdfUrl;
-      if (filePath.startsWith('/')) {
-        filePath = filePath.slice(1);
-      }
-      filePath = path.join(process.cwd(), filePath);
-
-      // Delete file from filesystem
-      try {
-        await fs.unlink(filePath);
-        this.logger.log(`Deleted payslip PDF from filesystem: ${filePath}`);
-
-        // Remove from cache if exists
-        if (presignedUrlCache.has(filePath)) {
-          presignedUrlCache.delete(filePath);
-        }
-      } catch (fsErr: any) {
-        if (fsErr.code !== 'ENOENT') { // Ignore if file doesn't exist
-          this.logger.error(`Failed to delete payslip PDF file: ${fsErr.message}`, fsErr.stack);
-        }
-      }
-
-      // Delete the payslip record
-      await this.payslipRepository.delete(payslip.id);
-    }
-
-    // Delete the payroll record
-    await this.payrollRepository.delete(id);
-    this.logger.log(`Payroll with ID ${id} has been deleted`);
-
-  } catch (error: any) {
-    this.logger.error(`Service error deleting payroll: ${error.message}`, error.stack);
-    throw new HttpException(
-      error.message || 'Failed to delete payroll',
-      error instanceof NotFoundException ? HttpStatus.NOT_FOUND : HttpStatus.INTERNAL_SERVER_ERROR,
-    );
-  }
-}
+  //     return { stream, filename };
+  //   } catch (error) {
+  //     console.error('Service error downloading payslip:', error);
+  //     throw new HttpException(
+  //       error.message || 'Failed to download payslip',
+  //       error instanceof NotFoundException ? HttpStatus.NOT_FOUND : HttpStatus.INTERNAL_SERVER_ERROR,
+  //     );
+  //   }
+  // }
 
 
-  async bulkUpdatePayroll(updates: { id: integer; status?: string; otherAllowances?: number }[]): Promise<Payroll[]> {
-    if (!updates || updates.length === 0) {
-      throw new HttpException('No updates provided', HttpStatus.BAD_REQUEST);
-    }
+// async deletePayroll(id: number): Promise<void> {
+//   try {
+//     const payroll = await this.payrollRepository.findOne({ where: { id } });
+//     if (!payroll) {
+//       throw new NotFoundException('Payroll not found');
+//     }
 
-    const ids = updates.map((item) => item.id);
-    const payrolls = await this.payrollRepository.find({
-      where: { id: In(ids) },
-    });
+//     // First check if there's an associated payslip
+//     const payslip = await this.payslipRepository.findOne({ where: { payrollId: id } });
+//     if (payslip) {
+//       // Extract local file path from the URL (assuming URL is relative, e.g. /uploads/payslips/file.pdf)
+//       // Adjust process cwd and remove leading slash as needed
+//       let filePath = payslip.pdfUrl;
+//       if (filePath.startsWith('/')) {
+//         filePath = filePath.slice(1);
+//       }
+//       filePath = path.join(process.cwd(), filePath);
 
-    if (payrolls.length !== ids.length) {
-      throw new HttpException('One or more payroll records not found', HttpStatus.NOT_FOUND);
-    }
+//       // Delete file from filesystem
+//       try {
+//         await fs.unlink(filePath);
+//         this.logger.log(`Deleted payslip PDF from filesystem: ${filePath}`);
 
-    const updatedPayrolls: Payroll[] = [];
+//         // Remove from cache if exists
+//         if (presignedUrlCache.has(filePath)) {
+//           presignedUrlCache.delete(filePath);
+//         }
+//       } catch (fsErr: any) {
+//         if (fsErr.code !== 'ENOENT') { // Ignore if file doesn't exist
+//           this.logger.error(`Failed to delete payslip PDF file: ${fsErr.message}`, fsErr.stack);
+//         }
+//       }
+
+//       // Delete the payslip record
+//       await this.payslipRepository.delete(payslip.id);
+//     }
+
+//     // Delete the payroll record
+//     await this.payrollRepository.delete(id);
+//     this.logger.log(`Payroll with ID ${id} has been deleted`);
+
+//   } catch (error: any) {
+//     this.logger.error(`Service error deleting payroll: ${error.message}`, error.stack);
+//     throw new HttpException(
+//       error.message || 'Failed to delete payroll',
+//       error instanceof NotFoundException ? HttpStatus.NOT_FOUND : HttpStatus.INTERNAL_SERVER_ERROR,
+//     );
+//   }
+// }
+
+
+//   async bulkUpdatePayroll(updates: { id: integer; status?: string; otherAllowances?: number }[]): Promise<Payroll[]> {
+//     if (!updates || updates.length === 0) {
+//       throw new HttpException('No updates provided', HttpStatus.BAD_REQUEST);
+//     }
+
+//     const ids = updates.map((item) => item.id);
+//     const payrolls = await this.payrollRepository.find({
+//       where: { id: In(ids) },
+//     });
+
+//     if (payrolls.length !== ids.length) {
+//       throw new HttpException('One or more payroll records not found', HttpStatus.NOT_FOUND);
+//     }
+
+//     const updatedPayrolls: Payroll[] = [];
 
 
     
-    await this.payrollRepository.manager.transaction(async (transactionalEntityManager) => {
-      for (const update of updates) {
-        const payroll = payrolls.find((p) => p.id ===update.id);
-        if (!payroll) continue;
-        let updatedPayroll;
+//     await this.payrollRepository.manager.transaction(async (transactionalEntityManager) => {
+//       for (const update of updates) {
+//         const payroll = payrolls.find((p) => p.id ===update.id);
+//         if (!payroll) continue;
+//         let updatedPayroll;
 
-        // Apply updates
-        if (update.status && ['approved', 'pending'].includes(update.status)) {
-          if(update.status==='approved'){
-           payroll.status = PayrollStatus.APPROVED;
-          }else{
-           payroll.status = PayrollStatus.PENDING;
+//         // Apply updates
+//         if (update.status && ['approved', 'pending'].includes(update.status)) {
+//           if(update.status==='approved'){
+//            payroll.status = PayrollStatus.APPROVED;
+//           }else{
+//            payroll.status = PayrollStatus.PENDING;
 
-          }
-         updatedPayroll = await transactionalEntityManager.save(Payroll, payroll);
+//           }
+//          updatedPayroll = await transactionalEntityManager.save(Payroll, payroll);
 
-        }
-        if (update.otherAllowances !== undefined) {
-          payroll.otherAllowances = update.otherAllowances;
-          const basicSalary = +payroll.basicSalary;
-          const allowances = +payroll.allowances;
-          const otherAllowances = +payroll.otherAllowances;
-          const specialAllowances = +payroll.specialAllowances;
-          const grossSalary = basicSalary + allowances+specialAllowances +otherAllowances;
-          payroll.netSalary=grossSalary;
-          console.log(grossSalary);
+//         }
+//         if (update.otherAllowances !== undefined) {
+//           payroll.otherAllowances = update.otherAllowances;
+//           const basicSalary = +payroll.basicSalary;
+//           const allowances = +payroll.allowances;
+//           const otherAllowances = +payroll.otherAllowances;
+//           const specialAllowances = +payroll.specialAllowances;
+//           const grossSalary = basicSalary + allowances+specialAllowances +otherAllowances;
+//           payroll.netSalary=grossSalary;
+//           console.log(grossSalary);
           
-          updatedPayroll = await transactionalEntityManager.save(Payroll, payroll);
+//           updatedPayroll = await transactionalEntityManager.save(Payroll, payroll);
       
-          await this.generatePayslip(updatedPayroll);
-        }
+//           await this.generatePayslip(updatedPayroll);
+//         }
 
-        updatedPayrolls.push(updatedPayroll);
-      }
-    });
+//         updatedPayrolls.push(updatedPayroll);
+//       }
+//     });
 
-    return updatedPayrolls;
-  }
+//     return updatedPayrolls;
+//   }
 
 
 async deletePayrollsByEmployeeId(employeeId: number): Promise<void> {

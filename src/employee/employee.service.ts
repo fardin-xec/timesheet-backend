@@ -14,6 +14,7 @@ import { UserRole } from 'src/entities/users.entity';
 import { EmailService } from 'src/email/smtpEmail.service';
 import { PayrollService } from 'src/payroll/payroll.service';
 import { LeaveService } from 'src/LeaveManagementModule/leave.service';
+import { Cron, CronExpression } from '@nestjs/schedule';
 
 const writeFile = promisify(fs.writeFile);
 const unlink = promisify(fs.unlink);
@@ -39,6 +40,9 @@ export class EmployeeService {
     this.ensureUploadDirectory();
   }
 
+ 
+
+
   private async ensureUploadDirectory(): Promise<void> {
     try {
       await mkdir(this.uploadPath, { recursive: true });
@@ -50,7 +54,7 @@ export class EmployeeService {
   /**
    * Check if the string is a base64 image
    */
-  private isBase64Image(str: string): boolean {
+   isBase64Image(str: string): boolean {
     if (!str) return false;
     return str.startsWith('data:image/');
   }
@@ -58,7 +62,7 @@ export class EmployeeService {
   /**
    * Extract base64 data and mime type from data URI
    */
-  private parseBase64Image(dataUri: string): { data: Buffer; ext: string } | null {
+   parseBase64Image(dataUri: string): { data: Buffer; ext: string } | null {
     try {
       // Extract mime type and base64 data
       const matches = dataUri.match(/^data:image\/([a-zA-Z]+);base64,(.+)$/);
@@ -90,7 +94,7 @@ export class EmployeeService {
   /**
    * Save base64 image to file system
    */
-  private async saveBase64Image(base64Data: string, employeeId: string): Promise<string> {
+   async saveBase64Image(base64Data: string, employeeId: string): Promise<string> {
     try {
       const imageData = this.parseBase64Image(base64Data);
       if (!imageData) {
@@ -116,7 +120,7 @@ export class EmployeeService {
   /**
    * Delete old avatar file from file system
    */
-  private async deleteOldAvatar(avatarPath: string): Promise<void> {
+   async deleteOldAvatar(avatarPath: string): Promise<void> {
     try {
       // Only delete if it's a local file path (not URL or base64)
       if (!avatarPath || avatarPath.startsWith('http') || avatarPath.startsWith('data:')) {
@@ -393,7 +397,8 @@ export class EmployeeService {
     reason: InactivationReason,
     remarks?: string,
     userId?: number,
-    request?: any,
+    inactivationDate?: string,
+    status?: EmployeeStatus,
   ): Promise<Employee> {
     try {
       const employee = await this.findOne(id);
@@ -417,14 +422,13 @@ export class EmployeeService {
     
 
       // Update employee status and inactivation details
-      const inactivationDate = new Date();
-      inactivationDate.setHours(0, 0, 0, 0);
+    
 
       await this.employeeRepository.update(id, {
-        status: EmployeeStatus.INACTIVE,
+        status: status,
         inactivationReason: reason,
         inactivationRemarks: remarks || null,
-        inactivationDate,
+        inactivationDate: new Date(inactivationDate),
       });
 
       const updatedEmployee = await this.findOne(id);
@@ -451,6 +455,8 @@ export class EmployeeService {
       throw error;
     }
   }
+
+  
 
   async markAsActive(
     id: number,
@@ -631,5 +637,30 @@ This notification was sent automatically by the HR Management System.
       // Don't throw error - we don't want email failure to prevent employee creation
     }
   }
+@Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
+async handleDailyInactivationCheck() {
+  console.log("Inactivation check started at:", new Date().toString());
 
+  try {
+    // Let PostgreSQL handle the date comparison (no timezone issues)
+    const employeesToUpdate = await this.employeeRepository
+      .createQueryBuilder("employee")
+      .where("employee.status = :status", { status: EmployeeStatus.PENDING_INACTIVE })
+      .andWhere("DATE(employee.inactivationDate) <= CURRENT_DATE")
+      .getMany();
+
+    console.log(`Found ${employeesToUpdate.length} employees to inactivate`);
+
+    for (const employee of employeesToUpdate) {
+      await this.employeeRepository.update(employee.id, {
+        status: EmployeeStatus.INACTIVE,
+      });
+      console.log(`Employee ${employee.id} updated to INACTIVE`);
+    }
+    
+    console.log("Inactivation check completed");
+  } catch (error) {
+    console.error("Error in inactivation check:", error);
+  }
+}
 }

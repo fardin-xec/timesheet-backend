@@ -1,9 +1,12 @@
 import { 
-    IsEmail, IsISO8601, IsNotEmpty, IsNumber, 
-    IsOptional, IsString, Length 
+    IsEmail, IsEnum, IsISO8601, IsNotEmpty, IsNumber, 
+    IsOptional, IsString, Length, 
+    Matches, 
+    MaxLength
   } from 'class-validator';
   import { ApiProperty } from '@nestjs/swagger';
   import { Type } from 'class-transformer';
+import { DocumentType } from 'src/entities/document.entity';
   
   export class CreatePersonalDto {
     @ApiProperty({ example: 1 })
@@ -49,4 +52,64 @@ import {
     @IsString()
     @IsOptional()
     permanentAddress?: string;
+
+    @ApiProperty({ required: false, example: 'Raju' })
+    @IsString()
+    @IsOptional()
+    emergencyContactName?: string;
+
+    @ApiProperty({ required: false, example: '+917788678778' })
+    @IsString()
+    @IsOptional()
+    emergencyContactPhone?: string;
+
+    @ApiProperty({ required: false, example: 'Indian' })
+    @IsString()
+    @IsOptional()
+    nationality?: string;
   }
+
+  export class UpdateBankInfoDto {
+  @ApiProperty()
+  @IsNotEmpty()
+  @IsString()
+  @MaxLength(255)
+  accountHolderName: string;
+
+  @ApiProperty()
+  @IsNotEmpty()
+  @IsString()
+  @MaxLength(255)
+  bankName: string;
+
+  @ApiProperty()
+  @IsNotEmpty()
+  @IsString()
+  @MaxLength(100)
+  city: string;
+
+  @ApiProperty()
+  @IsNotEmpty()
+  @IsString()
+  @MaxLength(255)
+  branchName: string;
+
+  @ApiProperty({ example: 'SBIN0001234' })
+  @IsNotEmpty()
+  @Matches(/^[A-Z]{4}0[A-Z0-9]{6}$/, {
+    message: 'Invalid IFSC code format'
+  })
+  ifscCode: string;
+
+  @ApiProperty()
+  @IsNotEmpty()
+  @IsString()
+  @Length(9, 18)
+  accountNo: string;
+}
+
+export class UploadDocumentDto {
+  @ApiProperty({ enum: DocumentType })
+  @IsEnum(DocumentType)
+  documentType: DocumentType;
+}

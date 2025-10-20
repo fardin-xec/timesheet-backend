@@ -1,3 +1,9 @@
+import { webcrypto } from 'crypto';
+
+// IMPORTANT: This must be before any other imports
+if (!globalThis.crypto) {
+  (globalThis as any).crypto = webcrypto;
+}
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ConfigService } from '@nestjs/config';
@@ -5,9 +11,14 @@ import { HttpExceptionFilter } from './filters/http-exception.filter';
 import { TypeORMError } from 'typeorm/error/TypeORMError';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { join } from 'path';
+import * as express from 'express';
+
 
 async function bootstrap() {
     const app = await NestFactory.create<NestExpressApplication>(AppModule);
+
+     app.use(express.json({ limit: '50mb' }));
+     app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
   // Get the configuration service to access environment variables
   const configService = app.get(ConfigService);
