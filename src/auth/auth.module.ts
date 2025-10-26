@@ -12,9 +12,9 @@ import { OtpController } from './otp.controller';
 import { OtpService } from './otp.sevice';
 import { EmailModule } from 'src/email/email.module';
 import { UsersModule } from 'src/user/user.module';
-import { Attendance } from 'src/entities/attendances.entity';
-import { EmployeeModule } from 'src/employee/employee.module';
 import { Employee } from 'src/entities/employees.entity';
+import { AttendanceTimeEntry } from 'src/entities/attendanceTimeEntry';
+import { Attendance } from 'src/entities/attendances.entity';
 
 @Module({
   imports: [
@@ -27,7 +27,7 @@ import { Employee } from 'src/entities/employees.entity';
       }),
       inject: [ConfigService],
     }),
-    TypeOrmModule.forFeature([User,Attendance,Employee]),
+    TypeOrmModule.forFeature([User,AttendanceTimeEntry,Employee]),
     EmailModule,
     UsersModule,
     

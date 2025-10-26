@@ -8,10 +8,12 @@ import { Leave } from '../entities/leave.entity';
 import { AttendanceController } from './attendance.controller';
 import { AttendanceService } from './attendance.service';
 import { AttendanceCronService } from './attendance-cron.service';
+import { AttendanceTimeEntry } from 'src/entities/attendanceTimeEntry';
+
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Attendance, Employee, Organization, Leave]),
+    TypeOrmModule.forFeature([Attendance, Employee, Organization, Leave,AttendanceTimeEntry]),
     ScheduleModule.forRoot(),
   ],
   controllers: [AttendanceController],

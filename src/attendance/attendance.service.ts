@@ -1,371 +1,460 @@
-import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, LessThanOrEqual, MoreThanOrEqual, In } from 'typeorm';
+import { Repository, Between } from 'typeorm';
+import { AttendanceTimeEntry, TimeEntryStatus } from '../entities/attendanceTimeEntry';
 import { Attendance, AttendanceStatus } from '../entities/attendances.entity';
-import { Employee } from '../entities/employees.entity';
-import { Organization } from '../entities/organizations.entity';
-import { Leave } from '../entities/leave.entity';
-import { CreateAttendanceDto } from './dto/create-attendance.dto';
-import { UpdateAttendanceDto } from './dto/update-attendance.dto';
-import { LeaveStatus } from '../entities/leave.entity';
+import { Employee } from 'src/entities/employees.entity';
 
 @Injectable()
 export class AttendanceService {
   constructor(
+    @InjectRepository(AttendanceTimeEntry)
+    private readonly timeEntryRepo: Repository<AttendanceTimeEntry>,
+
     @InjectRepository(Attendance)
-    private attendanceRepository: Repository<Attendance>,
+    private readonly attendanceRepo: Repository<Attendance>,
     @InjectRepository(Employee)
-    private employeeRepository: Repository<Employee>,
-    @InjectRepository(Organization)
-    private organizationRepository: Repository<Organization>,
-    @InjectRepository(Leave)
-    private leaveRepository: Repository<Leave>,
-  ) {}
+    private employeeRepository: Repository<Employee>,  ) {}
 
-  async create(createAttendanceDto: CreateAttendanceDto): Promise<Attendance> {
-    const { employeeId, orgId, attendanceDate } = createAttendanceDto;
+    /**
+   * Get attendance dashboard analytics for a specific date
+   * Returns count of present, absent, on leave, half day employees
+   */
+  async getAttendanceDashboard(orgId: number, date: Date) {
+    const targetDate = new Date(date);
+    targetDate.setHours(0, 0, 0, 0);
 
-    const attendanceDateObj = new Date(attendanceDate);
-    if (isNaN(attendanceDateObj.getTime())) {
-      throw new HttpException('Invalid attendance date', HttpStatus.BAD_REQUEST);
-    }
-
-    const employee = await this.employeeRepository.findOne({ where: { id: employeeId } });
-    if (!employee) {
-      throw new HttpException('Employee not found', HttpStatus.NOT_FOUND);
-    }
-
-    const organization = await this.organizationRepository.findOne({ where: { orgId } });
-    if (!organization) {
-      throw new HttpException('Organization not found', HttpStatus.NOT_FOUND);
-    }
-
-    const existingAttendance = await this.attendanceRepository.findOne({
-      where: { employeeId, attendanceDate: attendanceDateObj },
+    // Get total employees in organization
+    const totalEmployees = await this.employeeRepository.count({
+      where: { orgId },
     });
-    if (existingAttendance) {
-      throw new HttpException('Attendance record already exists for this employee on this date', HttpStatus.CONFLICT);
-    }
 
-    // Check for approved leave
-    const leave = await this.leaveRepository.findOne({
+    // Get all attendance records for the date
+    const attendanceRecords = await this.attendanceRepo.find({
       where: {
-        employeeId,
-        startDate: LessThanOrEqual(attendanceDateObj),
-        endDate: MoreThanOrEqual(attendanceDateObj),
-        status: LeaveStatus.APPROVED,
+        orgId,
+        attendanceDate: targetDate,
+      },
+      relations: ['employee'],
+    });
+
+    // Count by status
+    const present = attendanceRecords.filter(
+      (a) => a.status === AttendanceStatus.PRESENT
+    ).length;
+
+    const onLeave = attendanceRecords.filter(
+      (a) => a.status === AttendanceStatus.ON_LEAVE
+    ).length;
+
+    const halfDay = attendanceRecords.filter(
+      (a) => a.status === AttendanceStatus.HALF_DAY
+    ).length;
+
+    // Absent = Total employees - (present + onLeave + halfDay)
+    const absent = totalEmployees - (present + onLeave + halfDay);
+
+    // Calculate average working hours
+    const totalWorkingHours = attendanceRecords.reduce(
+      (sum, record) => sum + Number(record.totalWorkingHours || 0),
+      0
+    );
+    const avgWorkingHours = attendanceRecords.length > 0 
+      ? (totalWorkingHours / attendanceRecords.length).toFixed(2) 
+      : '0.00';
+
+    return {
+      date: targetDate,
+      total: totalEmployees,
+      present,
+      absent: absent > 0 ? absent : 0,
+      onLeave,
+      halfDay,
+      avgWorkingHours: parseFloat(avgWorkingHours),
+      attendancePercentage: totalEmployees > 0 
+        ? ((present / totalEmployees) * 100).toFixed(2) 
+        : '0.00',
+    };
+  }
+
+  /**
+   * Get attendance records for export (date range)
+   * Returns detailed attendance data with employee information
+   */
+  async getAttendanceForExport(
+    orgId: number,
+    startDate: Date,
+    endDate: Date
+  ) {
+    const queryStart = new Date(startDate);
+    const queryEnd = new Date(endDate);
+    queryStart.setHours(0, 0, 0, 0);
+    queryEnd.setHours(23, 59, 59, 999);
+
+    const attendanceRecords = await this.attendanceRepo.find({
+      where: {
+        orgId,
+        attendanceDate: Between(queryStart, queryEnd),
+      },
+      relations: ['employee', 'timeEntries'],
+      order: {
+        attendanceDate: 'DESC',
+        employee: { id: 'ASC' },
       },
     });
-    if (leave) {
-      createAttendanceDto.status = AttendanceStatus.ON_LEAVE;
-    }
 
-    const attendance = this.attendanceRepository.create({
-      ...createAttendanceDto,
-      employee,
-      organization,
-    });
-
-    return await this.attendanceRepository.save(attendance);
+    // Format data for export
+    return attendanceRecords.map((record) => ({
+      employeeId: record.employee.id,
+      employeeName: record.employee.firstName + record.employee.midName+ record.employee.lastName || 'N/A',
+      employeeEmail: record.employee.email || 'N/A',
+      date: record.attendanceDate,
+      status: record.status,
+      totalWorkingHours: Number(record.totalWorkingHours || 0).toFixed(2),
+      numberOfSessions: record.timeEntries?.length || 0,
+      firstCheckIn: record.timeEntries?.[0]?.startTime || null,
+      lastCheckOut: record.timeEntries?.[record.timeEntries.length - 1]?.endTime || null,
+      createdAt: record.createdAt,
+    }));
   }
 
-  async createBulk(createAttendanceDtos: CreateAttendanceDto[]): Promise<Attendance[]> {
-    const attendances = await Promise.all(
-      createAttendanceDtos.map(async (dto) => {
-        const employee = await this.employeeRepository.findOne({ where: { id: dto.employeeId } });
-        if (!employee) {
-          throw new HttpException(`Employee ${dto.employeeId} not found`, HttpStatus.NOT_FOUND);
-        }
-        const organization = await this.organizationRepository.findOne({ where: { orgId: dto.orgId } });
-        if (!organization) {
-          throw new HttpException(`Organization ${dto.orgId} not found`, HttpStatus.NOT_FOUND);
-        }
-        const attendanceDateObj = new Date(dto.attendanceDate);
-        if (isNaN(attendanceDateObj.getTime())) {
-          throw new HttpException('Invalid attendance date', HttpStatus.BAD_REQUEST);
-        }
 
-        const leave = await this.leaveRepository.findOne({
-          where: {
-            employeeId: dto.employeeId,
-            startDate: LessThanOrEqual(attendanceDateObj),
-            endDate: MoreThanOrEqual(attendanceDateObj),
-            status: LeaveStatus.APPROVED,
-          },
-        });
-        if (leave) {
-          dto.status = AttendanceStatus.ON_LEAVE;
-        }
-        return this.attendanceRepository.create({ ...dto, employee, organization });
-      }),
+  async startTimer(userId: number): Promise<AttendanceTimeEntry> {
+    const employee = await this.employeeRepository.findOneBy({userId})
+    const active = await this.timeEntryRepo.findOne({
+      where: { id: employee.id, status: TimeEntryStatus.ACTIVE },
+    });
+    if (active) throw new BadRequestException('An active timer already exists.');
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    let attendance = await this.attendanceRepo.findOne({
+      where: {
+        employeeId: employee.id,
+        orgId: employee.orgId,
+        attendanceDate: today,
+      },
+    });
+
+    if (!attendance) {
+      attendance = this.attendanceRepo.create({
+        employeeId: employee.id,
+        orgId: employee.orgId,
+        attendanceDate: today,
+        status: AttendanceStatus.PRESENT,
+        totalWorkingHours: 0,
+      });
+      await this.attendanceRepo.save(attendance);
+    }
+
+    const entry = this.timeEntryRepo.create({
+      attendanceId: attendance.id,
+      employeeId: employee.id,
+      startTime: new Date(),
+      status: TimeEntryStatus.ACTIVE,
+    });
+
+    return this.timeEntryRepo.save(entry);
+  }
+
+  async stopTimer(employeeId: number, taskData: Partial<AttendanceTimeEntry>): Promise<AttendanceTimeEntry> {
+    const active = await this.timeEntryRepo.findOne({
+      where: { employeeId, status: TimeEntryStatus.ACTIVE },
+    });
+
+    if (!active) throw new NotFoundException('No active timer found.');
+
+    const endTime = new Date();
+    const duration = Math.floor((endTime.getTime() - active.startTime.getTime()) / (1000 * 60));
+
+    active.endTime = endTime;
+    active.durationMinutes = duration;
+    active.status = TimeEntryStatus.COMPLETED;
+    active.taskDescription = taskData.taskDescription || null;
+    active.taskCategory = taskData.taskCategory || null;
+    active.projectName = taskData.projectName || null;
+    active.estimatedTimeMinutes = taskData.estimatedTimeMinutes || null;
+    active.notes = taskData.notes || null;
+
+    await this.timeEntryRepo.save(active);
+
+    // Update totalWorkingHours in Attendance
+    const attendance = await this.attendanceRepo.findOneBy({ id: active.attendanceId });
+    if (attendance) {
+      const totalMinutes = await this.timeEntryRepo
+        .createQueryBuilder('e')
+        .select('SUM(e.durationMinutes)', 'sum')
+        .where('e.attendanceId = :attendanceId', { attendanceId: attendance.id })
+        .andWhere('e.durationMinutes IS NOT NULL')
+        .getRawOne();
+
+      attendance.totalWorkingHours = +(+(totalMinutes.sum || 0) / 60).toFixed(2);
+      await this.attendanceRepo.save(attendance);
+    }
+
+    return active;
+  }
+
+  async getTodayEntries(userId: number): Promise<AttendanceTimeEntry[]> {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const endOfDay = new Date();
+    endOfDay.setHours(23, 59, 59, 999);
+
+     const employee = await this.employeeRepository.findOneBy({userId})
+
+
+    return this.timeEntryRepo.find({
+      where: {
+        employeeId:employee.id,
+        startTime: Between(today, endOfDay),
+      },
+      order: { startTime: 'ASC' },
+    });
+  }
+
+  async updateTaskDetails(entryId: number, employeeId: number, updates: Partial<AttendanceTimeEntry>) {
+    const entry = await this.timeEntryRepo.findOneBy({ id: entryId, employeeId });
+    if (!entry) throw new NotFoundException('Entry not found.');
+
+    // Prevent editing start/end times
+    entry.taskDescription = updates.taskDescription ?? entry.taskDescription;
+    entry.taskCategory = updates.taskCategory ?? entry.taskCategory;
+    entry.projectName = updates.projectName ?? entry.projectName;
+    entry.notes = updates.notes ?? entry.notes;
+    entry.estimatedTimeMinutes = updates.estimatedTimeMinutes ?? entry.estimatedTimeMinutes;
+
+    return this.timeEntryRepo.save(entry);
+  }
+
+  // async autoStopOpenEntries() {
+  //   const now = new Date();
+  //   const entries = await this.timeEntryRepo.find({
+  //     where: { status: TimeEntryStatus.ACTIVE },
+  //   });
+
+  //   for (const entry of entries) {
+  //     const duration = Math.floor((now.getTime() - entry.startTime.getTime()) / (1000 * 60));
+
+  //     entry.endTime = now;
+  //     entry.durationMinutes = duration;
+  //     entry.status = TimeEntryStatus.AUTO_STOPPED;
+
+  //     await this.timeEntryRepo.save(entry);
+
+  //     // Recalculate totalWorkingHours
+  //     const attendance = await this.attendanceRepo.findOneBy({ id: entry.attendanceId });
+  //     if (attendance) {
+  //       const totalMinutes = await this.timeEntryRepo
+  //         .createQueryBuilder('e')
+  //         .select('SUM(e.durationMinutes)', 'sum')
+  //         .where('e.attendanceId = :attendanceId', { attendanceId: attendance.id })
+  //         .andWhere('e.durationMinutes IS NOT NULL')
+  //         .getRawOne();
+
+  //       attendance.totalWorkingHours = +(+(totalMinutes.sum || 0) / 60).toFixed(2);
+  //       await this.attendanceRepo.save(attendance);
+  //     }
+  //   }
+  // }
+
+  async getEntriesByDateRange(
+  employeeId: number,
+  start: Date,
+  end?: Date,
+): Promise<AttendanceTimeEntry[]> {
+  const queryStart = new Date(start);
+  const queryEnd = end ? new Date(end) : new Date(start);
+  queryStart.setHours(0, 0, 0, 0);
+  queryEnd.setHours(23, 59, 59, 999);
+
+  return this.timeEntryRepo.find({
+    where: {
+      employeeId,
+      startTime: Between(queryStart, queryEnd),
+    },
+    order: { startTime: 'ASC' },
+  });
+}
+
+
+ 
+  
+  private async updateAttendanceHours(attendanceId: number): Promise<void> {
+    const entries = await this.timeEntryRepo.find({
+      where: { attendanceId },
+    });
+
+    const totalMinutes = entries.reduce(
+      (sum, entry) => sum + (entry.durationMinutes || 0),
+      0
     );
-    return await this.attendanceRepository.save(attendances, { chunk: 1000 });
-  }
 
-  async findAllWithFilters(filters: {
-    page: number;
-    limit: number;
-    employeeId?: number;
-    startDate?: string;
-    endDate?: string;
-  }): Promise<{ data: Attendance[]; total: number }> {
-    const { page, limit, employeeId, startDate, endDate } = filters;
-    const query = this.attendanceRepository.createQueryBuilder('attendance');
+    const totalHours = totalMinutes / 60;
 
-    if (employeeId) {
-      query.andWhere('attendance.employeeId = :employeeId', { employeeId });
-    }
-    if (startDate) {
-      query.andWhere('attendance.attendanceDate >= :startDate', { startDate: new Date(startDate) });
-    }
-    if (endDate) {
-      query.andWhere('attendance.attendanceDate <= :endDate', { endDate: new Date(endDate) });
-    }
-
-    query.skip((page - 1) * limit).take(limit);
-    const [data, total] = await query.getManyAndCount();
-    return { data, total };
-  }
-
-  async findOne(id: number): Promise<Attendance | null> {
-    try {
-      return await this.attendanceRepository.findOne({
-        where: { id },
-        relations: ['employee', 'organization'],
-      });
-    } catch (error) {
-      console.error('Error finding attendance:', error);
-      throw new HttpException('Failed to retrieve attendance', HttpStatus.INTERNAL_SERVER_ERROR);
-    }
-  }
-
-  async update(employeeId: number, updateAttendanceDto: UpdateAttendanceDto): Promise<Attendance | null> {
-    const today = new Date(); // Current date (should be April 21, 2025)
-    today.setUTCHours(0, 0, 0, 0); // Use UTC to avoid timezone offset
-    const todayString = today.toISOString().split('T')[0];
-    const attendanceDateObj = new Date(todayString);
-
-    const attendance = await this.attendanceRepository.findOne({ where: { employeeId, attendanceDate: attendanceDateObj } });
-    if (!attendance) {
-      throw new HttpException('Attendance not found', HttpStatus.NOT_FOUND);
-    }
-
-    if(updateAttendanceDto.checkOutTime&&attendance.checkInTime===null){
-       return attendance;
-    }
-
-    const attendanceId = attendance.id;
-
-    // Prevent updating checkInTime if it already exists
-    if (attendance.checkInTime && updateAttendanceDto.checkInTime && attendance.checkInTime !== updateAttendanceDto.checkInTime) {
-      return attendance;
-    }
-
-    return await this.attendanceRepository.manager.transaction(async (manager) => {
-      if (employeeId) {
-        const employee = await this.employeeRepository.findOne({ where: { id: employeeId } });
-        if (!employee) {
-          throw new HttpException('Employee not found', HttpStatus.NOT_FOUND);
-        }
-        attendance.employee = employee;
-      }
-
-      // Apply updates from updateAttendanceDto, avoiding overwrite of id
-      Object.assign(attendance, updateAttendanceDto);
-
-      // Calculate totalWorkingHours if both checkInTime and checkOutTime are available
-      if (attendance.checkInTime && attendance.checkOutTime) {
-        const checkIn = new Date(`1970-01-01T${attendance.checkInTime}Z`);
-        const checkOut = new Date(`1970-01-01T${attendance.checkOutTime}Z`);
-        const diffMs = checkOut.getTime() - checkIn.getTime(); // Difference in milliseconds
-        if (diffMs < 0) {
-          throw new HttpException('Check-out time cannot be before check-in time', HttpStatus.BAD_REQUEST);
-        }
-        attendance.totalWorkingHours = Number((diffMs / (1000 * 60 * 60)).toFixed(2)); // Convert to hours with 2 decimal places
-      } else {
-        attendance.totalWorkingHours = null; // Reset if either time is missing
-      }
-
-      // Use named parameter with setParameter
-      const updatedAttendance = await manager
-        .createQueryBuilder(Attendance, 'attendance')
-        .update(Attendance)
-        .set(attendance)
-        .where('id = :id', { id: attendanceId })
-        .execute();
-
-      if (updatedAttendance.affected === 0) {
-        throw new HttpException('Concurrent update detected', HttpStatus.CONFLICT);
-      }
-
-      return await manager.findOne(Attendance, { where: { id: attendanceId }, relations: ['employee', 'organization'] });
+    await this.attendanceRepo.update(attendanceId, {
+      totalWorkingHours: totalHours,
     });
   }
 
-  async updateAttendance(id: number, updateAttendanceDto: UpdateAttendanceDto): Promise<Attendance | null> {
+  /**
+   * Get attendance analytics for a specific date
+   */
+  async getAttendanceAnalytics(orgId: number, date: Date) {
+    const targetDate = new Date(date);
+    targetDate.setHours(0, 0, 0, 0);
 
-    const attendance = await this.attendanceRepository.findOne({ where: { id } });
-    if (!attendance) {
-      throw new HttpException('Attendance not found', HttpStatus.NOT_FOUND);
-    }
+    // Get all employees in organization
+    const totalEmployees = await this.employeeRepository.count({
+      where: { orgId },
+    });
 
+    // Get attendance records for the date
+    const attendanceRecords = await this.attendanceRepo.find({
+      where: {
+        orgId,
+        attendanceDate: targetDate,
+      },
+    });
 
-    return await this.attendanceRepository.manager.transaction(async (manager) => {
-      if (attendance.employeeId) {
-        const employee = await this.employeeRepository.findOne({ where: { id: attendance.employeeId } });
-        if (!employee) {
-          throw new HttpException('Employee not found', HttpStatus.NOT_FOUND);
-        }
-        attendance.employee = employee;
-      }
+    // Count by status
+    const present = attendanceRecords.filter(
+      (a) => a.status === AttendanceStatus.PRESENT
+    ).length;
 
-      // Apply updates from updateAttendanceDto, avoiding overwrite of id
-      Object.assign(attendance, updateAttendanceDto);
+    const onLeave = attendanceRecords.filter(
+      (a) => a.status === AttendanceStatus.ON_LEAVE
+    ).length;
 
-      
+    const halfDay = attendanceRecords.filter(
+      (a) => a.status === AttendanceStatus.HALF_DAY
+    ).length;
 
-      // Use named parameter with setParameter
-      const updatedAttendance = await manager
-        .createQueryBuilder(Attendance, 'attendance')
-        .update(Attendance)
-        .set(attendance)
-        .where('id = :id', { id })
-        .execute();
+    const absent = totalEmployees - (present + onLeave + halfDay);
 
-      if (updatedAttendance.affected === 0) {
-        throw new HttpException('Concurrent update detected', HttpStatus.CONFLICT);
-      }
+    return {
+      total: totalEmployees,
+      present,
+      absent: absent > 0 ? absent : 0,
+      onLeave,
+      halfDay,
+      date: targetDate,
+    };
+  }
 
-      return await manager.findOne(Attendance, { where: { id }, relations: ['employee', 'organization'] });
+  /**
+   * Get active timer for an employee
+   */
+  async getActiveTimer(employeeId: number): Promise<AttendanceTimeEntry | null> {
+    return this.timeEntryRepo.findOne({
+      where: {
+        employeeId,
+        status: TimeEntryStatus.ACTIVE,
+      },
     });
   }
 
-  async remove(id: number): Promise<boolean> {
-    try {
-      const attendance = await this.attendanceRepository.findOne({ where: { id } });
-      if (!attendance) {
-        return false;
-      }
-      await this.attendanceRepository.delete(id);
-      return true;
-    } catch (error) {
-      console.error('Error removing attendance:', error);
-      throw new HttpException('Failed to remove attendance', HttpStatus.INTERNAL_SERVER_ERROR);
+  /**
+   * Auto-stop all active timers at midnight (should be called by cron job)
+   */
+  async autoStopTimers(): Promise<void> {
+    const activeTimers = await this.timeEntryRepo.find({
+      where: { status: TimeEntryStatus.ACTIVE },
+      relations: ['attendance'],
+    });
+
+    const midnight = new Date();
+    midnight.setHours(23, 59, 59, 999);
+
+    for (const timer of activeTimers) {
+      const durationMinutes = Math.floor(
+        (midnight.getTime() - timer.startTime.getTime()) / (1000 * 60)
+      );
+
+      timer.endTime = midnight;
+      timer.durationMinutes = durationMinutes;
+      timer.status = TimeEntryStatus.AUTO_STOPPED;
+
+      await this.timeEntryRepo.save(timer);
+      await this.updateAttendanceHours(timer.attendanceId);
     }
   }
 
-  // New method based on EmployeeService reference
-  async findByOrganization(orgId: number): Promise<Attendance[]> {
-    try {
-      return await this.attendanceRepository.find({
-        where: { orgId },
-        relations: ['employee', 'organization'],
-      });
-    } catch (error) {
-      console.error('Error finding attendances by organization:', error);
-      throw new HttpException('Failed to retrieve attendances by organization', HttpStatus.INTERNAL_SERVER_ERROR);
-    }
-  }
+   /**
+   * Get attendance dashboard analytics for a specific date
+   * Returns count of present, absent, on leave, half day employees
+   */
+  async getAllEmployeesAttendance(orgId: number, date: Date) {
+  const targetDate = new Date(date);
+  targetDate.setHours(0, 0, 0, 0);
 
-  // New method for subordinates' attendance (assuming reportTo relation exists in Attendance)
-  async findSubordinatesAttendance(employeeId: number): Promise<Attendance[]> {
-    try {
-      const subordinates = await this.employeeRepository.find({ where: { reportTo: employeeId } });
-      const subordinateIds = subordinates.map((emp) => emp.id);
-      if (subordinateIds.length === 0) return [];
+  // Fetch all employees in the org
+  const employees = await this.employeeRepository.find({
+    where: { orgId },
+  });
 
-      return await this.attendanceRepository.find({
-        where: { employeeId: In(subordinateIds) },
-        relations: ['employee', 'organization'],
-      });
-    } catch (error) {
-      console.error('Error finding subordinates\' attendance:', error);
-      throw new HttpException('Failed to retrieve subordinates\' attendance', HttpStatus.INTERNAL_SERVER_ERROR);
-    }
-  }
+  // Fetch attendance records for the date with employee relation
+  const attendanceRecords = await this.attendanceRepo.find({
+    where: { orgId, attendanceDate: targetDate },
+    relations: ['employee'],
+  });
 
-  // New method for managers' attendance
-  async findOnlyManagersAttendance(): Promise<Attendance[]> {
-    try {
-      const managers = await this.employeeRepository.find({
-        where: [
-          { designation: In(['Manager', 'Lead', 'Senior', 'Director', 'VP']) },
-        ],
-      });
-      const managerIds = managers.map((emp) => emp.id);
-      if (managerIds.length === 0) return [];
+  // Create a map of attendance by employeeId for quick lookup
+  const attendanceMap = new Map<number, any>();
+  attendanceRecords.forEach((record) => {
+    attendanceMap.set(record.employeeId, record);
+  });
 
-      return await this.attendanceRepository.find({
-        where: { employeeId: In(managerIds) },
-        relations: ['employee', 'organization'],
-      });
-    } catch (error) {
-      console.error('Error finding managers\' attendance:', error);
-      if (error.detail) {
-        console.error('Database error details:', error.detail);
-      }
-      throw new HttpException('Failed to retrieve managers\' attendance', HttpStatus.INTERNAL_SERVER_ERROR);
-    }
-  }
+  // Prepare employees data with attendance info
+  const employeesWithAttendance = employees.map((emp) => {
+    const attendance = attendanceMap.get(emp.id);
+    return {
+      id: emp.id,
+      firstName: emp.firstName,
+      midName: emp.midName,
+      lastName: emp.lastName,
+      email: emp.email,
+      department: emp.department,
+      jobTitle: emp.jobTitle,
+      joiningDate: emp.joiningDate,
+      status: attendance ? attendance.status : 'ABSENT',
+      totalWorkingHours: attendance ? Number(attendance.totalWorkingHours || 0) : 0,
+    };
+  });
 
-  // New method to find attendance with leave counts (similar to EmployeeService.findAllWithLeaves)
-  async findAllWithLeaves(): Promise<any> {
-    try {
-      const query = this.attendanceRepository
-        .createQueryBuilder('attendance')
-        .leftJoin('attendance.employee', 'employee')
-        .leftJoin('employee.leaves', 'leaves')
-        .select([
-          'attendance.id AS "id"',
-          'attendance.employeeId AS "employeeId"',
-          'attendance.attendanceDate AS "attendanceDate"',
-          'attendance.status AS "status"',
-          'attendance.checkInTime AS "checkInTime"',
-          'attendance.checkOutTime AS "checkOutTime"',
-          'attendance.tasksPerformed AS "tasksPerformed"',
-          'attendance.orgId AS "orgId"',
-        ])
-        .addSelect(
-          'COALESCE(SUM(CASE WHEN leaves.status = :pending THEN 1 ELSE 0 END), 0)',
-          'pendingLeaves'
-        )
-        .addSelect(
-          'COALESCE(SUM(CASE WHEN leaves.status = :approved THEN 1 ELSE 0 END), 0)',
-          'approvedLeaves'
-        )
-        .setParameters({
-          pending: LeaveStatus.PENDING,
-          approved: LeaveStatus.APPROVED,
-        })
-        .groupBy('attendance.id')
-        .addGroupBy('attendance.employeeId')
-        .addGroupBy('attendance.attendanceDate')
-        .addGroupBy('attendance.status')
-        .addGroupBy('attendance.checkInTime')
-        .addGroupBy('attendance.checkOutTime')
-        .addGroupBy('attendance.tasksPerformed')
-        .addGroupBy('attendance.orgId');
+  // Count present, onLeave, halfDay, absent
+  const present = employeesWithAttendance.filter(
+    (e) => e.status === AttendanceStatus.PRESENT
+  ).length;
 
-      const attendances = await query.getRawMany();
+  const onLeave = employeesWithAttendance.filter(
+    (e) => e.status === AttendanceStatus.ON_LEAVE
+  ).length;
 
-      return attendances.map(attendance => ({
-        id: attendance.id,
-        employeeId: attendance.employeeId,
-        attendanceDate: attendance.attendanceDate,
-        status: attendance.status,
-        checkInTime: attendance.checkInTime,
-        checkOutTime: attendance.checkOutTime,
-        tasksPerformed: attendance.tasksPerformed,
-        orgId: attendance.orgId,
-        pendingLeaves: parseInt(attendance.pendingLeaves, 10) || 0,
-        approvedLeaves: parseInt(attendance.approvedLeaves, 10) || 0,
-      }));
-    } catch (error) {
-      console.error('Error finding attendances with leaves:', error);
-      if (error.detail) {
-        console.error('Database error details:', error.detail);
-      }
-      throw new HttpException('Failed to retrieve attendances with leaves', HttpStatus.INTERNAL_SERVER_ERROR);
-    }
-  }
+  const halfDay = employeesWithAttendance.filter(
+    (e) => e.status === AttendanceStatus.HALF_DAY
+  ).length;
+
+  const absent = employeesWithAttendance.filter(
+    (e) => e.status === 'ABSENT'
+  ).length;
+
+  // Calculate average working hours of those who are present/on leave/half day (skip absent)
+  const workingEmployees = employeesWithAttendance.filter(
+    (e) => e.status !== 'ABSENT'
+  );
+  const totalWorkingHours = workingEmployees.reduce(
+    (sum, e) => sum + e.totalWorkingHours,
+    0
+  );
+  const avgWorkingHours = workingEmployees.length > 0
+    ? (totalWorkingHours / workingEmployees.length).toFixed(2)
+    : '0.00';
+
+  return {
+    employees: employeesWithAttendance,
+  };
+}
+
 }

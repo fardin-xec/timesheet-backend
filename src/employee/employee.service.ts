@@ -150,6 +150,10 @@ export class EmployeeService {
     return this.employeeRepository.findOneBy({ id });
   }
 
+  findByUser(id: number): Promise<Employee> {
+    return this.employeeRepository.findOneBy({ userId: id });
+  }
+
   async create(employeeData: Partial<Employee>,payloadUserId: number): Promise<Employee> {
     const employee = this.employeeRepository.create(employeeData);
     

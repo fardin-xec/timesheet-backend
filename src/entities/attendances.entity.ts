@@ -1,7 +1,21 @@
-import { Entity, Column, PrimaryGeneratedColumn, ManyToOne, JoinColumn, CreateDateColumn, UpdateDateColumn, Index } from 'typeorm';
+import { 
+  Entity, 
+  Column, 
+  PrimaryGeneratedColumn, 
+  ManyToOne, 
+  OneToMany,
+  JoinColumn, 
+  CreateDateColumn, 
+  UpdateDateColumn, 
+  Index 
+} from 'typeorm';
 import { Employee } from './employees.entity';
 import { Organization } from './organizations.entity';
+import { AttendanceTimeEntry } from './attendanceTimeEntry';
 
+// ============================================
+// 1. Daily Attendance Summary Entity
+// ============================================
 export enum AttendanceStatus {
   PRESENT = 'present',
   ABSENT = 'absent',
@@ -35,20 +49,15 @@ export class Attendance {
   @Column({ name: 'attendance_date', type: 'date' })
   attendanceDate: Date;
 
-  @Column({ type: 'enum', enum: AttendanceStatus, nullable: true })
+  @Column({ type: 'enum', enum: AttendanceStatus, default: AttendanceStatus.PRESENT })
   status: AttendanceStatus;
 
-  @Column({ name: 'check_in_time', type: 'time', nullable: true })
-  checkInTime: string;
+  @Column({ name: 'total_working_hours', type: 'decimal', precision: 5, scale: 2, default: 0 })
+  totalWorkingHours: number;
 
-  @Column({ name: 'check_out_time', type: 'time', nullable: true })
-  checkOutTime: string;
-
-  @Column({ name: 'tasks_performed', type: 'varchar', length: 1000, nullable: true })
-  tasksPerformed: string;
-
-  @Column({ name: 'total_working_hours', type: 'decimal', precision: 5, scale: 2, nullable: true })
-  totalWorkingHours: number; // Stores hours as a decimal (e.g., 8.50 for 8 hours 30 minutes)
+  // Relation to time entries
+  @OneToMany(() => AttendanceTimeEntry, (entry) => entry.attendance, { cascade: true })
+  timeEntries: AttendanceTimeEntry[];
 
   @CreateDateColumn()
   createdAt: Date;

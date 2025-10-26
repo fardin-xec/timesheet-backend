@@ -38,6 +38,7 @@ import { DocumentsModule } from './documents/documents.module';
 import { AuditTrail } from './entities/audit-trail.entity';
 import { AuditTrailModule } from './audit-trail/audit-trail.module';
 import { Document } from './entities/document.entity';
+import { AttendanceTimeEntry } from './entities/attendanceTimeEntry';
 
 @Module({
   imports: [
@@ -75,6 +76,7 @@ import { Document } from './entities/document.entity';
         TaxRegime,
         AuditTrail,
         Document,
+        AttendanceTimeEntry,
       ],
       synchronize: true,
     }),
