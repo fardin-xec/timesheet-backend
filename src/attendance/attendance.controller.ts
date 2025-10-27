@@ -167,7 +167,6 @@ export class AttendanceController {
     if (!userId) {
       throw new BadRequestException('Missing userId or orgId in JWT payload');
     }
-    console.log(userId)
     return this.attendanceService.getMonthlyLogs(
       userId,
       startDate,
