@@ -154,6 +154,27 @@ export class AttendanceController {
     return new ResponseDto(HttpStatus.OK, "Today's entries fetched successfully", data);
   }
 
+  @UseGuards(JwtAuthGuard)
+  @Get('monthly-logs')
+  async getMonthlyLogs(
+    @Request() req: any,
+    @Query('startDate') startDate: string,
+    @Query('endDate') endDate: string,
+  ) {
+        console.log(req)
+
+     const { userId } = req.user || {};
+    if (!userId) {
+      throw new BadRequestException('Missing userId or orgId in JWT payload');
+    }
+    console.log(userId)
+    return this.attendanceService.getMonthlyLogs(
+      userId,
+      startDate,
+      endDate,
+    );
+  }
+
   // ------------ POST Endpoints ------------
 
   @UseGuards(JwtAuthGuard)
