@@ -208,10 +208,10 @@ export class PersonalController {
   @Put(':id')
   @ApiOperation({ summary: 'Update personal information' })
   @ApiParam({ name: 'id', type: 'string' })
-  async update(@Param('id') id: string, @Body() updatePersonalDto: CreatePersonalDto): Promise<ResponseDto<Personal>> {
+  async update(@Param('id') id: string, @Body() body: any): Promise<ResponseDto<any>> {
     try {
-      const data = await this.personalService.update(+id, updatePersonalDto);
-      return new ResponseDto(HttpStatus.OK, 'Personal information updated successfully', data.data);
+      const updateResult = await  this.personalService.handleUpdateRequest(+id, body);
+      return new ResponseDto(HttpStatus.OK, 'Personal information updated successfully', updateResult.data);
     } catch (error) {
       return new ResponseDto(HttpStatus.NOT_FOUND, 'Personal information not found');
     }

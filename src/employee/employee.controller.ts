@@ -237,7 +237,7 @@ export class EmployeeController {
           updateStatusDto.remarks,
           jwtPayload.userId,
           updateStatusDto.inactivationDate,
-          EmployeeStatus.ACTIVE,
+          EmployeeStatus.INACTIVE,
 
         );
       } else if (updateStatusDto.status === 'PENDING_INACTIVE') {

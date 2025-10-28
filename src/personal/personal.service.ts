@@ -13,6 +13,7 @@ import { CreatePersonalDto, UpdateBankInfoDto } from './dto/personal.dto';
 import * as path from 'path';
 import * as fs from 'fs/promises';
 import { v4 as uuidv4 } from 'uuid';
+import { Employee } from 'src/entities/employees.entity';
 
 @Injectable()
 export class PersonalService {
@@ -99,58 +100,97 @@ export class PersonalService {
     }
   }
 
-  async update(
-    employeeId: number, 
-    updatePersonalDto: CreatePersonalDto,
-    modifiedBy?: string | number
-  ): Promise<{ success: boolean; message: string; data: Personal }> {
-    if (!employeeId || employeeId <= 0) {
-      throw new BadRequestException('Invalid employee ID');
+ async updateEmployeeAndPersonal(
+  employeeId: number,
+  dto: { employeeFields: Partial<Employee>, personalFields: Partial<Personal> },
+  modifiedBy?: string | number
+): Promise<{ success: boolean; message: string; data: { employee: Employee; personal: Personal } }> {
+  if (!employeeId || employeeId <= 0) {
+    throw new BadRequestException('Invalid employee ID');
+  }
+
+  const queryRunner = this.dataSource.createQueryRunner();
+  await queryRunner.connect();
+  await queryRunner.startTransaction();
+
+  try {
+    // 1. Update Employee
+    const cleanedEmployee = Object.fromEntries(
+      Object.entries(dto.employeeFields).map(([k, v]) => [k, v === '' ? null : v])
+    );
+    await queryRunner.manager.update(Employee, { id: employeeId }, cleanedEmployee);
+    const updatedEmployee = await queryRunner.manager.findOne(Employee, {
+      where: { id: employeeId },
+    });
+
+    // 2. Update/Create Personal (foreign key by employeeId)
+    let personal = await queryRunner.manager.findOne(Personal, { where: { employeeId } });
+    const cleanedPersonal = Object.fromEntries(
+      Object.entries(dto.personalFields).map(([k, v]) => [k, v === '' ? null : v])
+    );
+    if (personal) {
+      await queryRunner.manager.update(Personal, { employeeId }, cleanedPersonal);
+      personal = await queryRunner.manager.findOne(Personal, { where: { employeeId } });
+    } else {
+      personal = queryRunner.manager.create(Personal, {
+        ...cleanedPersonal,
+        employeeId,
+      });
+      personal = await queryRunner.manager.save(personal);
     }
 
-    const queryRunner = this.dataSource.createQueryRunner();
-    await queryRunner.connect();
-    await queryRunner.startTransaction();
+    await queryRunner.commitTransaction();
 
-    try {
-      let personal = await queryRunner.manager.findOne(Personal, {
-        where: { employeeId },
-      });
+    return {
+      success: true,
+      message: 'Employee and personal information updated successfully',
+      data: { employee: updatedEmployee, personal },
+    };
+  } catch (error) {
+    await queryRunner.rollbackTransaction();
+    throw new InternalServerErrorException(
+      `Failed to update employee or personal data: ${error.message}`
+    );
+  } finally {
+    await queryRunner.release();
+  }
+}
+async  handleUpdateRequest(
+  employeeId: number,
+  requestBody: any
+) {
+  const employeeFields = {};
+  const personalFields = {};
 
-      
-
-      const oldValues = personal ? { ...personal } : null;
-      const action = personal ? 'UPDATE' : 'CREATE';
-
-      if (personal) {
-        Object.assign(personal, updatePersonalDto);
-      } else {
-        personal = queryRunner.manager.create(Personal, {
-          ...updatePersonalDto,
-          employeeId,
-        });
-      }
-
-      const saved = await queryRunner.manager.save(Personal, personal);
-
-     
-      await queryRunner.commitTransaction();
-
-      return {
-        success: true,
-        message: `Personal information ${action === 'CREATE' ? 'created' : 'updated'} successfully`,
-        data: saved
-      };
-    } catch (error) {
-      await queryRunner.rollbackTransaction();
-      console.error('Failed to update personal data:', error);
-      throw new InternalServerErrorException(
-        `Failed to update personal information: ${error.message}`
-      );
-    } finally {
-      await queryRunner.release();
+  // Map incoming fields to entity fields
+  for (const [key, value] of Object.entries(requestBody)) {
+    // Logic to determine which entity the field belongs to
+      if ([
+      'bio', 'firstName', 'lastName', 'midName', 'phone', 'designation',
+      'department', 'jobTitle', 'employmentType', 'joiningDate', 'dob', 'email' // add email if you want employee.email updated
+    ].includes(key)) {
+      employeeFields[key] = value;
+    } else if ([
+      'alternativePhone', 'bloodGroup', 'currentAddress', 'email', 'emergencyContactName', 
+      'emergencyContactPhone', 'maritalStatus', 'nationality', 'permanentAddress', 'weddingAnniversary'
+    ].includes(key)) {
+      personalFields[key] = value;
+    } else {
+      // Skip or handle other keys if needed
     }
   }
+
+  // Call your existing update function
+  const result =  this.updateEmployeeAndPersonal(employeeId, {
+    employeeFields,
+    personalFields,
+  });
+
+  return result;
+}
+
+
+
 
   async remove(
     id: number,
@@ -487,5 +527,9 @@ export class PersonalService {
       );
     }
   }
+
+  
  
 }
+
+
