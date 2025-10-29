@@ -507,15 +507,22 @@ export class AttendanceService {
     });
 
     // Get all attendance records in the range
-    const attendances = await this.attendanceRepo.find({
-      where: {
-        employeeId:employee.id,
-        orgId:employee.orgId,
-        attendanceDate: Between(start, end),
-      },
-      relations: ['timeEntries'],
-      order: { attendanceDate: 'DESC' },
-    });
+   const attendances = await this.attendanceRepo.find({
+  where: {
+    employeeId: employee.id,
+    orgId: employee.orgId,
+    attendanceDate: Between(start, end),
+  },
+  relations: ['timeEntries'],
+  order: { 
+    attendanceDate: 'DESC',
+    timeEntries: {
+      // Specify the field you want to sort by in timeEntries
+      createdAt: 'ASC', // or whichever field makes sense for your use case
+      // Examples: startTime: 'ASC', timestamp: 'ASC', id: 'ASC'
+    }
+  },
+});
 
     // Create attendance map
     const attendanceMap = new Map<string, Attendance>();
