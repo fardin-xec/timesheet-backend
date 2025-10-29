@@ -208,4 +208,17 @@ export class AttendanceController {
     const data = await this.attendanceService.updateTaskDetails(id, employeeId, updates);
     return new ResponseDto(HttpStatus.OK, 'Task updated successfully', data);
   }
+
+@UseGuards(JwtAuthGuard)
+@Get('active-timer')
+async getActiveTimer(@Req() req: any): Promise<ResponseDto<any>> {
+  const { userId } = req.user;
+  const data = await this.attendanceService.getActiveTimerWithElapsed(userId);
+  
+  return new ResponseDto(
+    HttpStatus.OK, 
+    'Active timer fetched successfully', 
+    data
+  );
+}
 }

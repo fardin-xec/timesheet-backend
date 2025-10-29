@@ -629,4 +629,50 @@ export class AttendanceService {
     };
   }
 
+  async getActiveTimerByUserId(userId: number): Promise<AttendanceTimeEntry | null> {
+  const employee = await this.employeeRepository.findOneBy({ userId });
+  
+  if (!employee) {
+    return null;
+  }
+
+  return this.timeEntryRepo.findOne({
+    where: {
+      employeeId: employee.id,
+      status: TimeEntryStatus.ACTIVE,
+    },
+    order: {
+      startTime: 'DESC',
+    },
+  });
+}
+
+/**
+ * Get active timer with elapsed time calculation
+ */
+async getActiveTimerWithElapsed(userId: number) {
+  const activeTimer = await this.getActiveTimerByUserId(userId);
+  
+  if (!activeTimer) {
+    return {
+      isActive: false,
+      entry: null,
+      elapsedSeconds: 0,
+      elapsedMinutes: 0,
+    };
+  }
+
+  const elapsedMs = Date.now() - new Date(activeTimer.startTime).getTime();
+  const elapsedSeconds = Math.floor(elapsedMs / 1000);
+  const elapsedMinutes = Math.floor(elapsedMs / (1000 * 60));
+
+  return {
+    isActive: true,
+    entry: activeTimer,
+    elapsedSeconds,
+    elapsedMinutes,
+    startTime: activeTimer.startTime,
+  };
+}
+
 }
