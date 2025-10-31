@@ -125,7 +125,7 @@ export class AttendanceService {
   async startTimer(userId: number): Promise<AttendanceTimeEntry> {
     const employee = await this.employeeRepository.findOneBy({userId})
     const active = await this.timeEntryRepo.findOne({
-      where: { id: employee.id, status: TimeEntryStatus.ACTIVE },
+      where: { employeeId: employee.id, status: TimeEntryStatus.ACTIVE },
     });
     if (active) throw new BadRequestException('An active timer already exists.');
 
@@ -161,9 +161,11 @@ export class AttendanceService {
     return this.timeEntryRepo.save(entry);
   }
 
-  async stopTimer(employeeId: number, taskData: Partial<AttendanceTimeEntry>): Promise<AttendanceTimeEntry> {
+  async stopTimer(userId: number, taskData: Partial<AttendanceTimeEntry>): Promise<AttendanceTimeEntry> {
+    const employee = await this.employeeRepository.findOneBy({userId})
+
     const active = await this.timeEntryRepo.findOne({
-      where: { employeeId, status: TimeEntryStatus.ACTIVE },
+      where: { employeeId:employee.id, status: TimeEntryStatus.ACTIVE },
     });
 
     if (!active) throw new NotFoundException('No active timer found.');
@@ -477,7 +479,180 @@ export class AttendanceService {
       throw new BadRequestException('Invalid date format');
     }
 
-    if (end > today) {
+    const endDateOnly = new Date(end.getFullYear(), end.getMonth(), end.getDate());
+    if (endDateOnly > today) {
+      throw new BadRequestException('End date cannot be in the future');
+    }
+
+    if (start > end) {
+      throw new BadRequestException('Start date must be before end date');
+    }
+
+    // Get approved leaves in the date range
+    const leaves = await this.leaveRepository.find({
+      where: {
+        employeeId:employee.id,
+        status: LeaveStatus.APPROVED,
+        startDate: Between(start, end),
+      },
+    });
+
+    // Create a map of leave dates
+    const leaveDatesMap = new Map<string, Leave>();
+    leaves.forEach((leave) => {
+      const leaveStart = new Date(leave.startDate);
+      const leaveEnd = new Date(leave.endDate);
+      
+      for (let d = new Date(leaveStart); d <= leaveEnd; d.setDate(d.getDate() + 1)) {
+        const dateKey = d.toISOString().split('T')[0];
+        leaveDatesMap.set(dateKey, leave);
+      }
+    });
+
+    // Get all attendance records in the range
+   const attendances = await this.attendanceRepo.find({
+  where: {
+    employeeId: employee.id,
+    orgId: employee.orgId,
+    attendanceDate: Between(start, end),
+  },
+  relations: ['timeEntries'],
+  order: { 
+    attendanceDate: 'DESC',
+    timeEntries: {
+      // Specify the field you want to sort by in timeEntries
+      createdAt: 'ASC', // or whichever field makes sense for your use case
+      // Examples: startTime: 'ASC', timestamp: 'ASC', id: 'ASC'
+    }
+  },
+});
+
+    // Create attendance map
+    const attendanceMap = new Map<string, Attendance>();
+    attendances.forEach((att) => {
+      const dateKey = new Date(att.attendanceDate).toISOString().split('T')[0];
+      attendanceMap.set(dateKey, att);
+    });
+
+    // Generate daily logs for the entire date range
+    const dailyLogs = [];
+    const currentDate = new Date(start);
+
+    while (currentDate <= end) {
+      const dateKey = currentDate.toISOString().split('T')[0];
+      const dayOfWeek = currentDate.getDay(); // 0 = Sunday, 5 = Friday, 6 = Saturday
+      
+      let status: string;
+      let totalWorkingHours = 0;
+      let firstStartTime: Date | null = null;
+      let lastEndTime: Date | null = null;
+      let timeEntries: AttendanceTimeEntry[] = [];
+
+      // Check if it's a weekend (Friday or Saturday)
+      if (dayOfWeek === 5 || dayOfWeek === 6) {
+        status = 'week_off';
+      }
+      // Check if on approved leave
+      else if (leaveDatesMap.has(dateKey)) {
+        const leave = leaveDatesMap.get(dateKey);
+        status = leave.isHalfDay ? 'half_day' : 'on_leave';
+        
+        // If half day and has attendance, include working hours
+        if (leave.isHalfDay && attendanceMap.has(dateKey)) {
+          const attendance = attendanceMap.get(dateKey);
+          totalWorkingHours = Number(attendance.totalWorkingHours);
+          timeEntries = attendance.timeEntries || [];
+          
+          if (timeEntries.length > 0) {
+            firstStartTime = timeEntries[0].startTime;
+            const lastEntry = timeEntries[timeEntries.length - 1];
+            lastEndTime = lastEntry.endTime;
+          }
+        }
+      }
+      // Check if has attendance
+      else if (attendanceMap.has(dateKey)) {
+        const attendance = attendanceMap.get(dateKey);
+        status = attendance.status;
+        totalWorkingHours = Number(attendance.totalWorkingHours);
+        timeEntries = attendance.timeEntries || [];
+        
+        if (timeEntries.length > 0) {
+          firstStartTime = timeEntries[0].startTime;
+          const lastEntry = timeEntries[timeEntries.length - 1];
+          lastEndTime = lastEntry.endTime;
+        }
+      }
+      // No attendance record and not a weekend or leave
+      else if (currentDate < today) {
+        status = 'absent';
+      }
+      // Future date
+      else {
+        status = 'not_marked';
+      }
+
+      dailyLogs.push({
+        date: dateKey,
+        dayOfWeek: currentDate.toLocaleDateString('en-US', { weekday: 'short' }),
+        status,
+        totalWorkingHours: totalWorkingHours.toFixed(2),
+        firstStartTime,
+        lastEndTime,
+        timeEntries: timeEntries.map(entry => ({
+          id: entry.id,
+          startTime: entry.startTime,
+          endTime: entry.endTime,
+          durationMinutes: entry.durationMinutes,
+          status: entry.status,
+          taskDescription: entry.taskDescription,
+          taskCategory: entry.taskCategory,
+          projectName: entry.projectName,
+          notes: entry.notes,
+        })),
+      });
+
+      currentDate.setDate(currentDate.getDate() + 1);
+    }
+
+    // Calculate summary statistics
+    const summary = {
+      totalDays: dailyLogs.length,
+      presentDays: dailyLogs.filter(d => d.status === 'present').length,
+      absentDays: dailyLogs.filter(d => d.status === 'absent').length,
+      leaveDays: dailyLogs.filter(d => d.status === 'on_leave').length,
+      halfDays: dailyLogs.filter(d => d.status === 'half_day').length,
+      weekOffs: dailyLogs.filter(d => d.status === 'week_off').length,
+      totalHoursWorked: dailyLogs.reduce((sum, d) => sum + parseFloat(d.totalWorkingHours), 0).toFixed(2),
+    };
+
+    return {
+      summary,
+      dailyLogs,
+    };
+  }
+
+   async getEmployeeMonthlyLogs(
+    employeeId: number,
+    startDate: string,
+    endDate: string,
+  ) {
+    //get Employee details
+    const employee = await this.employeeRepository.findOneBy({id:employeeId})
+    if(!employee){
+      throw new BadRequestException('Invalid employee Id');
+    }
+    // Validate dates
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+      throw new BadRequestException('Invalid date format');
+    }
+    const endDateOnly = new Date(end.getFullYear(), end.getMonth(), end.getDate());
+    if (endDateOnly > today) {
       throw new BadRequestException('End date cannot be in the future');
     }
 

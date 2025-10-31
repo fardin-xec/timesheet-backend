@@ -161,7 +161,6 @@ export class AttendanceController {
     @Query('startDate') startDate: string,
     @Query('endDate') endDate: string,
   ) {
-        console.log(req)
 
      const { userId } = req.user || {};
     if (!userId) {
@@ -169,6 +168,21 @@ export class AttendanceController {
     }
     return this.attendanceService.getMonthlyLogs(
       userId,
+      startDate,
+      endDate,
+    );
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('employee-monthly-logs/')
+  async getEmployeeMonthlyLogs(
+    @Query('startDate') startDate: string,
+    @Query('endDate') endDate: string,
+    @Query('employeeId') employeeId?: number,
+  ) {
+
+    return this.attendanceService.getEmployeeMonthlyLogs(
+      employeeId,
       startDate,
       endDate,
     );
@@ -190,8 +204,8 @@ export class AttendanceController {
   @UseGuards(JwtAuthGuard)
   @Post('stop')
   async stop(@Req() req: any, @Body() taskData: any): Promise<ResponseDto<any>> {
-    const { employeeId } = req.user;
-    const data = await this.attendanceService.stopTimer(employeeId, taskData);
+    const { userId } = req.user;
+    const data = await this.attendanceService.stopTimer(userId, taskData);
     return new ResponseDto(HttpStatus.OK, 'Timer stopped successfully', data);
   }
 

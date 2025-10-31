@@ -19,7 +19,7 @@ export class AttendanceCronService {
   ) {}
   // CronExpression.EVERY_DAY_AT_1AM
   // "* * * * *"
-  @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT, { name: 'createDailyAttendance' })
+ @Cron('59 23 * * *', { name: 'createDailyAttendance' })
   async createDailyAttendance() {
     await this.attendanceService.autoStopTimers();
   }
