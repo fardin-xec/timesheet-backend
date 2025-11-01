@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { AuditTrail, AuditTrailAction } from '../entities/audit-trail.entity';
@@ -205,4 +205,12 @@ export class AuditTrailService {
       order: { actionDate: 'DESC' },
     });
   }
+
+  async remove(employeeId: number): Promise<void> {
+      const result = await this.auditTrailRepository.delete({ employeeId });
+      
+      if (result.affected === 0) {
+        throw new NotFoundException(`User with ID ${employeeId} not found`);
+      }
+    }
 }

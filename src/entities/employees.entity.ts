@@ -108,7 +108,7 @@ export class Employee {
   @Column({ name: 'joining_date', type: 'date' })
   joiningDate: Date;
 
-  @Column({ name: 'dob', type: 'date' })
+  @Column({ name: 'dob', type: 'date',nullable: true })
   dob: Date;
 
   @Column({ type: 'numeric', precision: 12, scale: 2, nullable: true })
@@ -130,6 +130,9 @@ export class Employee {
 
   @Column({ name: 'inactivation_date', type: 'date', nullable: true })
   inactivationDate: Date;
+
+  @Column({ name: 'work_location', length: 100, nullable: true })
+  workLocation: string;
 
 
   @CreateDateColumn()
@@ -190,4 +193,6 @@ export class Employee {
 
   @OneToMany(() => AuditTrail, auditTrail => auditTrail.employee)
   auditTrails: AuditTrail[];
+
+
 }

@@ -15,6 +15,7 @@ import { EmailService } from 'src/email/smtpEmail.service';
 import { PayrollService } from 'src/payroll/payroll.service';
 import { LeaveService } from 'src/LeaveManagementModule/leave.service';
 import { Cron, CronExpression } from '@nestjs/schedule';
+import { CheckExistenceDto } from './dto/create-employee.dto';
 
 const writeFile = promisify(fs.writeFile);
 const unlink = promisify(fs.unlink);
@@ -226,6 +227,12 @@ export class EmployeeService {
       if (bankInfo) {
         await this.bankInfoService.remove(employee.id);
       }
+
+      const auditTrail = await this.auditTrailService.findByEmployee(employee.id);
+      if (auditTrail) {
+        await this.auditTrailService.remove(employee.id);
+      }
+
       await this.leaveService.deleteLeavesByEmployeeId(employee.id); 
       await this.payrollService.deletePayrollsByEmployeeId(employee.id);
       await this.employeeRepository.delete(id);
@@ -502,6 +509,66 @@ export class EmployeeService {
       throw error;
     }
   }
+
+    async checkExistence(checkExistenceDto: CheckExistenceDto) {
+    const { email, phone } = checkExistenceDto;
+
+    // Validate that at least one field is provided
+    if (!email && !phone) {
+      throw new BadRequestException('Either email or phone must be provided');
+    }
+
+    const result = {
+      email: {
+        exists: false,
+        existsIn: [] as string[],
+      },
+      phone: {
+        exists: false,
+        existsIn: [] as string[],
+      },
+    };
+
+    // Check email existence
+    if (email) {
+      // Check in User entity
+      const userExists = await this.userService.findByEmail(email);
+
+      // Check in Employee entity
+      const employeeExists = await this.employeeRepository.findOne({
+        where: { email },
+      });
+
+      if (userExists) {
+        result.email.exists = true;
+        result.email.existsIn.push('users');
+      }
+
+      if (employeeExists) {
+        result.email.exists = true;
+        result.email.existsIn.push('employees');
+      }
+    }
+
+    // Check phone existence
+    if (phone) {
+      const employeeWithPhone = await this.employeeRepository.findOne({
+        where: { phone },
+      });
+
+      if (employeeWithPhone) {
+        result.phone.exists = true;
+        result.phone.existsIn.push('employees');
+      }
+    }
+
+    return {
+      success: true,
+      data: result,
+    };
+  }
+
+
 
   mapRoleToUserRole(role: string): UserRole {
   const roleLowercase = role.toLowerCase().trim();

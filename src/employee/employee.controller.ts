@@ -1,13 +1,14 @@
-import { Controller, Get, Param, Post, Body, Put, Delete, UseGuards, HttpStatus,Request } from '@nestjs/common';
+import { Controller, Get, Param, Post, Body, Put, Delete, UseGuards, HttpStatus,Request, HttpCode } from '@nestjs/common';
 import { EmployeeService } from './employee.service';
 import { Employee, EmployeeStatus, InactivationReason } from '../entities/employees.entity';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { ResponseDto } from '../dto/response.dto';
 import { UsersService } from 'src/user/user.service';
 import { BankInfoService } from 'src/bank-info/bank-info.service';
-import { CreateEmployeeDto } from './dto/create-employee.dto';
+import { CheckExistenceDto, CreateEmployeeDto } from './dto/create-employee.dto';
 import { JwtStrategy } from 'src/auth/jwt.strategy';
 import { JwtSecretRequestType } from '@nestjs/jwt';
+import { ApiOperation } from '@nestjs/swagger';
 
 class passwordUpdateDto {
   oldPassword: string;
@@ -298,6 +299,16 @@ export class EmployeeController {
     return new ResponseDto(HttpStatus.OK, 'User updated successfully', data);
   }
 
- 
-
+  @UseGuards(JwtAuthGuard)
+  @Post('check-existence')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ 
+    summary: 'Check if email or phone already exists',
+    description: 'Validates if the provided email or phone number is already registered in the system'
+  })
+  async checkExistence(@Body() checkExistenceDto: CheckExistenceDto) {
+    return this.employeeService.checkExistence(checkExistenceDto);
+  }
 }
+
+

@@ -1,5 +1,6 @@
 import { IsString, IsEmail, IsPhoneNumber, IsOptional, IsEnum, IsDateString, IsNotEmpty, MinLength, Matches } from 'class-validator';
 import { EmployeeStatus, Gender } from '../../entities/employees.entity'
+import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateEmployeeDto {
   // Mandatory Fields
@@ -135,4 +136,16 @@ export class CreateEmployeeDto {
 
    @IsOptional()
   orgId?: number
+}
+
+export class CheckExistenceDto {
+  @ApiPropertyOptional({ example: 'user@example.com' })
+  @IsOptional()
+  @IsEmail({}, { message: 'Invalid email format' })
+  email?: string;
+
+  @ApiPropertyOptional({ example: '+1234567890' })
+  @IsOptional()
+  @IsString()
+  phone?: string;
 }
