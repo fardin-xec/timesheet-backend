@@ -213,6 +213,7 @@ export class PersonalController {
       const updateResult = await  this.personalService.handleUpdateRequest(+id, body);
       return new ResponseDto(HttpStatus.OK, 'Personal information updated successfully', updateResult.data);
     } catch (error) {
+      console.log(error)
       return new ResponseDto(HttpStatus.NOT_FOUND, 'Personal information not found');
     }
   }

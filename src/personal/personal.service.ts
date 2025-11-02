@@ -155,40 +155,53 @@ export class PersonalService {
     await queryRunner.release();
   }
 }
-async  handleUpdateRequest(
+async handleUpdateRequest(
   employeeId: number,
-  requestBody: any
+  requestBody: Record<string, any>
 ) {
-  const employeeFields = {};
-  const personalFields = {};
+  const employeeFields: Partial<Employee> = {};
+  const personalFields: Partial<Personal> = {};
+
+  // Define field mappings
+  const employeeFieldNames = [
+    'bio', 'firstName', 'lastName', 'midName', 'phone', 'designation',
+    'department', 'jobTitle', 'employmentType', 'joiningDate', 'dob'
+  ] as const;
+
+  const personalFieldNames = [
+    'alternativePhone', 'bloodGroup', 'currentAddress', 'email', 
+    'emergencyContactName', 'emergencyContactPhone', 'maritalStatus', 
+    'nationality', 'permanentAddress', 'weddingAnniversary'
+  ] as const;
 
   // Map incoming fields to entity fields
   for (const [key, value] of Object.entries(requestBody)) {
-    // Logic to determine which entity the field belongs to
-      if ([
-      'bio', 'firstName', 'lastName', 'midName', 'phone', 'designation',
-      'department', 'jobTitle', 'employmentType', 'joiningDate', 'dob', 'email' // add email if you want employee.email updated
-    ].includes(key)) {
-      employeeFields[key] = value;
-    } else if ([
-      'alternativePhone', 'bloodGroup', 'currentAddress', 'email', 'emergencyContactName', 
-      'emergencyContactPhone', 'maritalStatus', 'nationality', 'permanentAddress', 'weddingAnniversary'
-    ].includes(key)) {
-      personalFields[key] = value;
-    } else {
-      // Skip or handle other keys if needed
+    // Skip null, undefined, or empty string values
+    if (value === null || value === undefined || value === '') {
+      continue;
     }
+
+    if (employeeFieldNames.includes(key as any)) {
+      employeeFields[key] = value;
+    } else if (personalFieldNames.includes(key as any)) {
+      personalFields[key] = value;
+    }
+    // Unknown fields are silently ignored
+  }
+
+  // Validate that at least some fields are being updated
+  if (Object.keys(employeeFields).length === 0 && Object.keys(personalFields).length === 0) {
+    throw new BadRequestException('No valid fields provided for update');
   }
 
   // Call your existing update function
-  const result =  this.updateEmployeeAndPersonal(employeeId, {
+  const result = await this.updateEmployeeAndPersonal(employeeId, {
     employeeFields,
     personalFields,
   });
 
   return result;
 }
-
 
 
 
