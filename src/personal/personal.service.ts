@@ -165,7 +165,7 @@ async handleUpdateRequest(
   // Define field mappings
   const employeeFieldNames = [
     'bio', 'firstName', 'lastName', 'midName', 'phone', 'designation',
-    'department', 'jobTitle', 'employmentType', 'joiningDate', 'dob'
+    'department', 'jobTitle', 'employmentType', 'joiningDate', 'dob','gender'
   ] as const;
 
   const personalFieldNames = [
