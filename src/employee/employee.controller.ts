@@ -9,6 +9,7 @@ import { CheckExistenceDto, CreateEmployeeDto } from './dto/create-employee.dto'
 import { JwtStrategy } from 'src/auth/jwt.strategy';
 import { JwtSecretRequestType } from '@nestjs/jwt';
 import { ApiOperation } from '@nestjs/swagger';
+import { PersonalService } from 'src/personal/personal.service';
 
 class passwordUpdateDto {
   oldPassword: string;
@@ -27,6 +28,7 @@ export class EmployeeController {
     private readonly employeeService: EmployeeService,
     private readonly UsersService: UsersService,
     private readonly bankInfoService: BankInfoService,
+    private readonly personalService: PersonalService,
 
 
   ) 
@@ -162,6 +164,10 @@ export class EmployeeController {
         joiningDate: createEmployeeDto.joiningDate
           ? new Date(createEmployeeDto.joiningDate)
           : new Date(),
+        isProbation: createEmployeeDto.isProbation,
+        confirmationDate: createEmployeeDto.confirmationDate
+          ? new Date(createEmployeeDto.confirmationDate)
+          : null,
         ctc: createEmployeeDto.ctc ? parseFloat(createEmployeeDto.ctc) : null,
         currency: createEmployeeDto.currency || 'USD',
         bio: createEmployeeDto.bio,
@@ -172,9 +178,9 @@ export class EmployeeController {
         passportNumber:createEmployeeDto.passportNumber,
         passportExpiration:createEmployeeDto.passportValidTill ? new Date(createEmployeeDto.passportValidTill): new Date(),
         reportTo: createEmployeeDto.reportTo,
+        workLocation: createEmployeeDto.workLocation,
       };
 
-   
 
     //   // Step 4: Create the employee with the user information
       const data = await this.employeeService.create({
@@ -184,11 +190,10 @@ export class EmployeeController {
 
       },jwtPayload.userId);
 
-      if (
-        createEmployeeDto.bankName ||
-        createEmployeeDto.accountNumber ||
-        createEmployeeDto.accountHolderName
-      ) {
+      // await this.personalService.createEmptyPersonal(data.id);
+
+
+      
         await this.bankInfoService.create({
           employeeId: data.id,
           bankName: createEmployeeDto.bankName,
@@ -197,8 +202,10 @@ export class EmployeeController {
           ifscCode: createEmployeeDto.ifscCode,
           branchName: createEmployeeDto.branchName,
           city: createEmployeeDto.city,
+          swiftCode: createEmployeeDto.swiftCode,
+          ibankNo: createEmployeeDto.ibankNo,
         });
-      }
+      
 
       await this.employeeService.sendWelcomeEmail(data);
     

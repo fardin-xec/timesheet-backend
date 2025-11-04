@@ -1,4 +1,4 @@
-import { IsString, IsEmail, IsPhoneNumber, IsOptional, IsEnum, IsDateString, IsNotEmpty, MinLength, Matches } from 'class-validator';
+import { IsString, IsEmail, IsPhoneNumber, IsOptional, IsEnum, IsDateString, IsNotEmpty, MinLength, Matches, isBoolean, IsBoolean } from 'class-validator';
 import { EmployeeStatus, Gender } from '../../entities/employees.entity'
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -92,6 +92,14 @@ export class CreateEmployeeDto {
   ifscCode?: string;
 
   @IsOptional()
+  @IsString({ message: 'Swift code must be a string' })
+  swiftCode?: string;
+
+  @IsOptional()
+  @IsString({ message: 'IBank No code must be a string' })
+  ibankNo?: string;
+
+  @IsOptional()
   @Matches(/^[0-9]{9,18}$/, {
     message: 'Account number must be 9-18 digits',
   })
@@ -124,8 +132,22 @@ export class CreateEmployeeDto {
   employmentType?: string;
 
   @IsOptional()
+  @IsString({ message: 'Work Location must be a string' })
+  workLocation?: string;
+
+  @IsOptional()
   @IsDateString({}, { message: 'Joining date must be a valid date' })
   joiningDate?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  isProbation?: boolean;
+
+ @IsOptional()
+ @IsDateString({}, { message: 'Confirmation date must be a valid date' })
+ confirmationDate?: string;
+
+
 
   @IsOptional()
   @IsString({ message: 'Bio must be a string' })

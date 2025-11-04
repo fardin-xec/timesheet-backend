@@ -35,6 +35,9 @@ export class PersonalService {
     private readonly documentRepository: Repository<Document>,
     @InjectRepository(BankInfo)
     private readonly bankInfoRepository: Repository<BankInfo>,
+     @InjectRepository(Employee)
+    private readonly employeeRepository: Repository<Employee>,
+    
     private readonly dataSource: DataSource,
   ) {
     this.ensureUploadDirectory();
@@ -67,11 +70,19 @@ export class PersonalService {
       relations: ['employee']
     });
     
-    if (!personal) {
-      throw new NotFoundException(
-        `Personal information for employee ID ${employeeId} not found`
-      );
-    }
+        if (!personal) {
+        const employee = await this.employeeRepository.findOne({
+          where: { id: employeeId }
+        });
+        
+        if (!employee) {
+          throw new NotFoundException(`Employee with ID ${employeeId} not found`);
+        }
+        
+        return {
+             employee: employee
+          } as any;
+      }
     
     return personal;
   }
@@ -88,6 +99,71 @@ export class PersonalService {
     
     return personal;
   }
+
+  async createEmptyPersonal(
+  employeeId: number
+): Promise<{ success: boolean; message: string; data: Personal }> {
+  const queryRunner = this.dataSource.createQueryRunner();
+  await queryRunner.connect();
+  await queryRunner.startTransaction();
+
+  try {
+    // Check if personal record already exists
+    const existingPersonal = await queryRunner.manager.findOne(Personal, {
+      where: { employeeId }
+    });
+
+    if (existingPersonal) {
+      throw new BadRequestException(
+        `Personal information for employee ID ${employeeId} already exists`
+      );
+    }
+
+    // Verify employee exists
+    const employee = await queryRunner.manager.findOne(Employee, {
+      where: { id: employeeId }
+    });
+
+    if (!employee) {
+      throw new NotFoundException(`Employee with ID ${employeeId} not found`);
+    }
+
+    // Create empty personal record
+    const personal = queryRunner.manager.create(Personal, {
+      employeeId,
+      alternativePhone: null,
+      bloodGroup: null,
+      currentAddress: null,
+      email: null,
+      emergencyContactName: null,
+      emergencyContactPhone: null,
+      maritalStatus: null,
+      nationality: null,
+      permanentAddress: null,
+      weddingAnniversary: null
+    });
+
+    const saved = await queryRunner.manager.save(Personal, personal);
+
+    await queryRunner.commitTransaction();
+
+    return {
+      success: true,
+      message: 'Empty personal record created successfully',
+      data: saved
+    };
+  } catch (error) {
+    await queryRunner.rollbackTransaction();
+    if (error instanceof NotFoundException || error instanceof BadRequestException) {
+      throw error;
+    }
+    throw new InternalServerErrorException(
+      `Failed to create personal record: ${error.message}`
+    );
+  } finally {
+    await queryRunner.release();
+  }
+}
 
   async findEmployeeOne(employeeId: number): Promise<Personal | null> {
     try {

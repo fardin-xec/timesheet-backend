@@ -10,10 +10,10 @@ export class BankInfo {
   @Column({ name: 'employee_id', nullable: true })
   employeeId: number;
 
-  @Column({ name: 'bank_name', length: 100 })
+  @Column({ name: 'bank_name', length: 100 ,nullable: true })
   bankName: string;
 
-  @Column({ name: 'account_holder_name', length: 100 })
+  @Column({ name: 'account_holder_name', length: 100,nullable: true  })
   accountHolderName: string;
 
   @Column({ length: 100, nullable: true})
@@ -22,13 +22,16 @@ export class BankInfo {
   @Column({ name: 'branch_name', length: 100, nullable: true })
   branchName: string;
 
-  @Column({ name: 'ifsc_code', length: 20,nullable:true })
+  @Column({ name: 'ifsc_code', length: 20, nullable: true })
   ifscCode: string;
 
-   @Column({ name: 'swift_code', length: 20,nullable:true })
+  @Column({ name: 'swift_code', length: 11, nullable: true })
   swiftCode: string;
 
-  @Column({ name: 'account_no', length: 50 })
+  @Column({ name: 'ibankNo', length: 34, nullable: true })
+  ibankNo: string;
+
+  @Column({ name: 'account_no', length: 50 , nullable: true })
   accountNo: string;
 
   @Column({ name: 'is_primary', default: false })

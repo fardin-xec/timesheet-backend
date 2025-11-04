@@ -99,8 +99,8 @@ export class Employee {
   @Column({ name: 'is_probation', default: false })
   isProbation: boolean;
 
-  @Column({ name: 'probation_period', default: 0 })
-  probationPeriod: number;
+  @Column({ name: 'confirmation_date', type: 'date', nullable: true })
+  confirmationDate: Date;
 
   @Column({ name: 'employment_type', length: 100, nullable: true })
   employmentType: string;
