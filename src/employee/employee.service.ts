@@ -16,6 +16,8 @@ import { PayrollService } from 'src/payroll/payroll.service';
 import { LeaveService } from 'src/LeaveManagementModule/leave.service';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { CheckExistenceDto } from './dto/create-employee.dto';
+import { LeaveRule } from 'src/entities/leave-rule.entity';
+import { EmployeeLeaveRule } from 'src/entities/employee-leave-rule.entity';
 
 const writeFile = promisify(fs.writeFile);
 const unlink = promisify(fs.unlink);
@@ -28,6 +30,8 @@ export class EmployeeService {
 
   constructor(
     @InjectRepository(Employee) private employeeRepository: Repository<Employee>,
+    @InjectRepository(LeaveRule) private leaveRuleRepository: Repository<LeaveRule>,
+    @InjectRepository(EmployeeLeaveRule) private employeeLeaveRuleRepository: Repository<EmployeeLeaveRule>,
     private personalService: PersonalService,
     private userService: UsersService,
     private bankInfoService: BankInfoService,
@@ -161,6 +165,9 @@ export class EmployeeService {
     
     const data = await this.employeeRepository.save(employee)
     console.log(data)
+    // Assign leave rules based on gender and probation status
+    await this.assignLeaveRules(data);
+
     await this.auditTrailService.logEmployeeCreation(
       data,
       payloadUserId,
@@ -175,6 +182,12 @@ export class EmployeeService {
       if (!existingEmployee) {
         throw new Error('Employee not found');
       }
+
+      // Check if isProbation or gender is being updated
+    const isProbationChanged = employeeData.isProbation !== undefined && 
+                                employeeData.isProbation !== existingEmployee.isProbation;
+    const isGenderChanged = employeeData.gender !== undefined && 
+                             employeeData.gender !== existingEmployee.gender;
 
       // Handle avatar if provided
       if (employeeData.avatar) {
@@ -197,6 +210,11 @@ export class EmployeeService {
 
       const updatedEmployee = await this.findOne(id)
 
+      // Reassign leave rules if isProbation or gender changed
+    if (isProbationChanged || isGenderChanged) {
+      await this.reassignLeaveRules(updatedEmployee);
+    }
+
        await this.auditTrailService.logEmployeeUpdate(
           updatedEmployee,
           existingEmployee,
@@ -209,6 +227,95 @@ export class EmployeeService {
       throw error;
     }
   }
+async reassignLeaveRules(employee: Employee): Promise<void> {
+  // Remove all existing leave rule assignments for this employee
+  await this.employeeLeaveRuleRepository.delete({
+    employee: { id: employee.id }
+  });
+
+  // Get all active leave rules
+  const leaveRules = await this.leaveRuleRepository.find({
+    where: { isActive: true }
+  });
+
+  let rulesToAssign: LeaveRule[] = [];
+
+  if (employee.isProbation) {
+    // If on probation, assign only lossOfPay
+    const lossOfPayRule = leaveRules.find(rule => 
+      rule.leaveType === 'lossOfPay'
+    );
+    if (lossOfPayRule) {
+      rulesToAssign = [lossOfPayRule];
+    }
+  } else {
+    // Not on probation
+    if (employee.gender === 'female') {
+      // Female: assign all leave types
+      rulesToAssign = leaveRules;
+    } else {
+      // Male: assign all except maternity leave
+      rulesToAssign = leaveRules.filter(rule => 
+        rule.leaveType !== 'maternity'
+      );
+    }
+  }
+
+  // Create new employee leave rule entries
+  const employeeLeaveRules = rulesToAssign.map(rule => {
+    return this.employeeLeaveRuleRepository.create({
+      employee: employee,
+      rule: rule,
+      assignedAt: new Date()
+    });
+  });
+
+  if (employeeLeaveRules.length > 0) {
+    await this.employeeLeaveRuleRepository.save(employeeLeaveRules);
+  }
+}
+  private async assignLeaveRules(employee: Employee): Promise<void> {
+  // Get all leave rules
+  const leaveRules = await this.leaveRuleRepository.find({
+    where: { isActive: true }
+  });
+  
+  let rulesToAssign: LeaveRule[] = [];
+  
+  if (employee.isProbation) {
+    // If on probation, assign only lossOfPay
+    const lossOfPayRule = leaveRules.find(rule => 
+      rule.leaveType === 'lossOfPay'
+    );
+    if (lossOfPayRule) {
+      rulesToAssign = [lossOfPayRule];
+    }
+  } else {
+    // Not on probation
+    if (employee.gender === 'female') {
+      // Female: assign all leave types
+      rulesToAssign = leaveRules;
+    } else {
+      // Male: assign all except maternity leave
+      rulesToAssign = leaveRules.filter(rule => 
+        rule.leaveType !== 'maternity'
+      );
+    }
+  }
+  
+  // Create employee leave rule entries
+  const employeeLeaveRules = rulesToAssign.map(rule => {
+    return this.employeeLeaveRuleRepository.create({
+      employee: employee,
+      rule: rule,
+      assignedAt: new Date()
+    });
+  });
+  
+  if (employeeLeaveRules.length > 0) {
+    await this.employeeLeaveRuleRepository.save(employeeLeaveRules);
+  }
+}
 
   async remove(id: number): Promise<void> {
     const employee = await this.findOne(id);
@@ -330,7 +437,7 @@ export class EmployeeService {
           'employee.gender AS "gender"',
           'employee.department AS "department"',
           'employee.is_probation AS "isProbation"',
-          'employee.probation_period AS "probationPeriod"',
+          'employee.confirmation_date AS "confirmationDate"',
           'employee.employment_type AS "employmentType"',
           'employee.joining_date AS "joiningDate"',
           'employee.dob AS "dob"',
@@ -369,7 +476,7 @@ export class EmployeeService {
         gender: employee.gender,
         department: employee.department,
         isProbation: employee.isProbation,
-        probationPeriod: employee.probationPeriod,
+        confirmaionDate: employee.confirmationDate,
         employmentType: employee.employmentType,
         joiningDate: employee.joiningDate,
         dob: employee.dob,

@@ -24,6 +24,9 @@ import { EmailModule } from 'src/email/email.module';
   ],
   providers: [LeaveService],
   controllers: [LeaveController],
-   exports: [LeaveService], 
+  exports: [
+    LeaveService,
+    TypeOrmModule, // Add this to export the repositories
+  ], 
 })
 export class LeaveManagementModule {}

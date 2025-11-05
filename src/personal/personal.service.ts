@@ -14,6 +14,8 @@ import * as path from 'path';
 import * as fs from 'fs/promises';
 import { v4 as uuidv4 } from 'uuid';
 import { Employee } from 'src/entities/employees.entity';
+import { LeaveRule } from 'src/entities/leave-rule.entity';
+import { EmployeeLeaveRule } from 'src/entities/employee-leave-rule.entity';
 
 @Injectable()
 export class PersonalService {
@@ -28,20 +30,23 @@ export class PersonalService {
     'application/msword'
   ];
 
-  constructor(
-    @InjectRepository(Personal)
-    private readonly personalRepository: Repository<Personal>,
-    @InjectRepository(Document)
-    private readonly documentRepository: Repository<Document>,
-    @InjectRepository(BankInfo)
-    private readonly bankInfoRepository: Repository<BankInfo>,
-     @InjectRepository(Employee)
-    private readonly employeeRepository: Repository<Employee>,
-    
-    private readonly dataSource: DataSource,
-  ) {
-    this.ensureUploadDirectory();
-  }
+ constructor(
+  @InjectRepository(Personal)
+  private readonly personalRepository: Repository<Personal>,
+  @InjectRepository(Document)
+  private readonly documentRepository: Repository<Document>,
+  @InjectRepository(BankInfo)
+  private readonly bankInfoRepository: Repository<BankInfo>,
+  @InjectRepository(Employee)
+  private readonly employeeRepository: Repository<Employee>,
+  @InjectRepository(LeaveRule) 
+  private leaveRuleRepository: Repository<LeaveRule>,
+  @InjectRepository(EmployeeLeaveRule) 
+  private employeeLeaveRuleRepository: Repository<EmployeeLeaveRule>,
+  private readonly dataSource: DataSource,
+) {
+  this.ensureUploadDirectory();
+}
 
   private async ensureUploadDirectory() {
     try {
@@ -194,10 +199,21 @@ export class PersonalService {
     const cleanedEmployee = Object.fromEntries(
       Object.entries(dto.employeeFields).map(([k, v]) => [k, v === '' ? null : v])
     );
+    const employee = await queryRunner.manager.findOne(Employee, {
+      where: { id: employeeId },
+    });
     await queryRunner.manager.update(Employee, { id: employeeId }, cleanedEmployee);
     const updatedEmployee = await queryRunner.manager.findOne(Employee, {
       where: { id: employeeId },
     });
+    
+     const isGenderChanged = dto.employeeFields.gender !== undefined && 
+                             employee.gender !== updatedEmployee.gender
+
+    if(isGenderChanged){
+
+      await this.reassignLeaveRules(updatedEmployee);
+    }
 
     // 2. Update/Create Personal (foreign key by employeeId)
     let personal = await queryRunner.manager.findOne(Personal, { where: { employeeId } });
@@ -229,6 +245,53 @@ export class PersonalService {
     );
   } finally {
     await queryRunner.release();
+  }
+}
+async reassignLeaveRules(employee: Employee): Promise<void> {
+  // Remove all existing leave rule assignments for this employee
+  await this.employeeLeaveRuleRepository.delete({
+    employee: { id: employee.id }
+  });
+
+  // Get all active leave rules
+  const leaveRules = await this.leaveRuleRepository.find({
+    where: { isActive: true }
+  });
+
+  let rulesToAssign: LeaveRule[] = [];
+
+  if (employee.isProbation) {
+    // If on probation, assign only lossOfPay
+    const lossOfPayRule = leaveRules.find(rule => 
+      rule.leaveType === 'lossOfPay'
+    );
+    if (lossOfPayRule) {
+      rulesToAssign = [lossOfPayRule];
+    }
+  } else {
+    // Not on probation
+    if (employee.gender === 'female') {
+      // Female: assign all leave types
+      rulesToAssign = leaveRules;
+    } else {
+      // Male: assign all except maternity leave
+      rulesToAssign = leaveRules.filter(rule => 
+        rule.leaveType !== 'maternity'
+      );
+    }
+  }
+
+  // Create new employee leave rule entries
+  const employeeLeaveRules = rulesToAssign.map(rule => {
+    return this.employeeLeaveRuleRepository.create({
+      employee: employee,
+      rule: rule,
+      assignedAt: new Date()
+    });
+  });
+
+  if (employeeLeaveRules.length > 0) {
+    await this.employeeLeaveRuleRepository.save(employeeLeaveRules);
   }
 }
 async handleUpdateRequest(
