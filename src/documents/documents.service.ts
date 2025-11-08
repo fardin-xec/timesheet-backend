@@ -1,10 +1,9 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { forwardRef, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { Document } from '../entities/document.entity';
+import { Document, DocumentType } from '../entities/document.entity';
 import * as fs from 'fs/promises';
-import * as path from 'path';
-import { v4 as uuidv4 } from 'uuid';
+import { PersonalService } from 'src/personal/personal.service';
 
 @Injectable()
 export class DocumentsService {
@@ -13,6 +12,9 @@ export class DocumentsService {
   constructor(
     @InjectRepository(Document)
     private documentRepository: Repository<Document>,
+    @Inject(forwardRef(() => PersonalService))
+    private personalService:PersonalService,
+
   ) {
     this.ensureUploadDirectory();
   }
@@ -25,24 +27,13 @@ export class DocumentsService {
     }
   }
 
-  async uploadDocument(file: Express.Multer.File): Promise<Document> {
-    const fileExtension = path.extname(file.originalname);
-    const fileName = `${uuidv4()}${fileExtension}`;
-    const filePath = path.join(this.uploadPath, fileName);
-
-    // Save file to disk
-    await fs.writeFile(filePath, new Uint8Array(file.buffer));
-
-    // Save document info to database
-    const document = this.documentRepository.create({
-      originalName: file.originalname,
-      filePath,
-      mimeType: file.mimetype,
-      size: file.size,
-    });
-
-    return await this.documentRepository.save(document);
+  async uploadDocument(file: Express.Multer.File,employeeId: number,uploadedBy: number): Promise<Document> {
+   
+   const document = await this.personalService.uploadDocument(employeeId,file,DocumentType.LEAVE,uploadedBy)
+    return document.data;
   }
+
+  
 
   async getDocument(id: string): Promise<Document> {
     const document = await this.documentRepository.findOne({ where: { id } });

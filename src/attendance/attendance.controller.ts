@@ -150,6 +150,9 @@ export class AttendanceController {
   @Get('today')
   async getToday(@Req() req: any): Promise<ResponseDto<any>> {
     const { userId } = req.user;
+    if (!userId) {
+      throw new BadRequestException('Missing userId or orgId in JWT payload');
+    }
     const data = await this.attendanceService.getTodayEntries(userId);
     return new ResponseDto(HttpStatus.OK, "Today's entries fetched successfully", data);
   }

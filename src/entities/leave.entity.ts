@@ -1,3 +1,4 @@
+// src/entities/leave.entity.ts
 import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn, CreateDateColumn, UpdateDateColumn } from 'typeorm';
 import { Employee } from './employees.entity';
 
@@ -14,6 +15,7 @@ export enum LeaveStatus {
   PENDING = 'pending',
   APPROVED = 'approved',
   REJECTED = 'rejected',
+  CANCELLED = 'cancelled',
 }
 
 export enum HalfDayType {
@@ -29,16 +31,16 @@ export class Leave {
   @Column({ name: 'employee_id' })
   employeeId: number;
 
- @Column({ default: 'annual' }) // ✅ Replace 'annual' with a valid default
-leaveType: string;
+  @Column({ name: 'leave_type', type: 'enum', enum: LeaveType })
+  leaveType: string;
 
-  @Column({ type: 'date', nullable: true })
+  @Column({ name: 'start_date', type: 'date' })
   startDate: Date;
 
-  @Column({ type: 'date',nullable: true })
+  @Column({ name: 'end_date', type: 'date' })
   endDate: Date;
 
-  @Column({ type: 'decimal', precision: 4, scale: 1 ,default: 1 })
+  @Column({ name: 'applied_days', type: 'decimal', precision: 4, scale: 1, default: 1 })
   appliedDays: number;
 
   @Column({ type: 'text', nullable: true })
@@ -54,18 +56,25 @@ leaveType: string;
   @Column({ name: 'approved_by', nullable: true })
   approvedBy: number;
 
-  @Column({ type: 'boolean', default: false })
+  @Column({ name: 'is_half_day', type: 'boolean', default: false })
   isHalfDay: boolean;
 
   @Column({
+    name: 'half_day_type',
     type: 'enum',
     enum: HalfDayType,
     nullable: true,
   })
   halfDayType: HalfDayType;
 
-  @Column({ name: 'document_id', type: 'uuid', nullable: true, default: null })
+  @Column({ name: 'document_id', type: 'uuid', nullable: true })
   documentId: string;
+
+  @Column({ name: 'rejection_reason', type: 'text', nullable: true })
+  rejectionReason: string;
+
+  @Column({ name: 'cancelled_at', type: 'timestamp', nullable: true })
+  cancelledAt: Date;
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;

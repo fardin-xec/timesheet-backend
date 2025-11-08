@@ -1,134 +1,307 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, ParseIntPipe, UseInterceptors, UploadedFile, BadRequestException } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
+// src/controllers/leave.controller.ts
+import {
+  Controller,
+  Get,
+  Post,
+  Put,
+  Delete,
+  Body,
+  Param,
+  Query,
+  UseGuards,
+  Request,
+  HttpCode,
+  HttpStatus,
+  ParseIntPipe,
+} from '@nestjs/common';
 import { LeaveService } from './leave.service';
-import { CreateLeaveDto } from './dto/create-leave.dto';
-import { UpdateLeaveDto } from './dto/update-leave.dto';
-import { Leave } from '../entities/leave.entity';
+import { LeaveRuleService } from './leave-rule.service';
+import {
+  ApplyLeaveDto,
+  UpdateLeaveDto,
+  ApproveRejectLeaveDto,
+  LeaveFilterDto,
+} from './dto/create-leave.dto';
+import {
+  CreateLeaveRuleDto,
+  UpdateLeaveRuleDto,
+} from './dto/leave-rule.dto';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { RolesGuard } from '../guards/roles.guard';
+import { Roles } from '../decorators/roles.decorator';
+import { UserRole } from '../entities/users.entity';
 import { ResponseDto } from '../dto/response.dto';
-import { LeaveRule } from 'src/entities/leave-rule.entity';
-import { EmployeeLeaveRule } from 'src/entities/employee-leave-rule.entity';
-import { LeaveBalances } from 'src/entities/leave-balance.entity';
 
 @Controller('leaves')
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class LeaveController {
-  constructor(private readonly leaveService: LeaveService) {}
+  constructor(
+    private readonly leaveService: LeaveService,
+    private readonly leaveRuleService: LeaveRuleService,
+  ) {}
 
-  @Post()
-  create(@Body() createLeaveDto: CreateLeaveDto): Promise<ResponseDto<Leave>> {
-    return this.leaveService.createLeave(createLeaveDto);
-  }
+  // ==================== LEAVE RULES ====================
 
-  @Post('upload-attachment')
-  @UseInterceptors(FileInterceptor('file'))
-  async uploadAttachment(@UploadedFile() file: Express.Multer.File) {
-    if (!file) {
-      throw new BadRequestException('No file uploaded');
+  @Post('rules')
+  @Roles(UserRole.ADMIN)
+  async createLeaveRule(@Request() req, @Body() dto: CreateLeaveRuleDto) {
+    try {
+      const data = await this.leaveRuleService.createLeaveRule(req.user.orgId, dto);
+      return new ResponseDto(HttpStatus.CREATED, 'Leave rule created successfully', data);
+    } catch (error) {
+      return new ResponseDto(HttpStatus.INTERNAL_SERVER_ERROR, 'Failed to create leave rule', error.message);
     }
+  }
 
-    // Validate file type
-    const allowedTypes = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png'];
-    if (!allowedTypes.includes(file.mimetype)) {
-      throw new BadRequestException('Only PDF, JPG, and PNG files are allowed');
+  @Put('rules/:id')
+  @Roles(UserRole.ADMIN)
+  async updateLeaveRule(
+    @Request() req,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: UpdateLeaveRuleDto,
+  ) {
+    try {
+      const data = await this.leaveRuleService.updateLeaveRule(id, req.user.orgId, dto);
+      return new ResponseDto(HttpStatus.OK, 'Leave rule updated successfully', data);
+    } catch (error) {
+      return new ResponseDto(HttpStatus.INTERNAL_SERVER_ERROR, 'Failed to update leave rule', error.message);
     }
-
-    // Validate file size (5MB max)
-    const maxSize = 5 * 1024 * 1024; // 5MB in bytes
-    if (file.size > maxSize) {
-      throw new BadRequestException('File size cannot exceed 5MB');
-    }
-
-    // Here you would implement your file upload logic to S3/storage
-    // For now, returning a mock URL
-    const uploadedUrl = await this.leaveService.uploadFile(file);
-    
-    return new ResponseDto(200, 'File uploaded successfully', { url: uploadedUrl });
   }
 
-  @Get()
-  findAll(): Promise<ResponseDto<Leave[]>> {
-    return this.leaveService.findAllLeaves();
+  @Get('rules')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
+  async getLeaveRules(@Request() req) {
+    const data = await this.leaveRuleService.getLeaveRules(req.user.orgId);
+    return new ResponseDto(HttpStatus.OK, 'Leave rules retrieved successfully', data);
   }
 
-  @Get(':id')
-  findOne(@Param('id', ParseIntPipe) id: number): Promise<ResponseDto<Leave>> {
-    return this.leaveService.findLeaveById(id);
+  @Get('rules/:leaveType')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
+  async getLeaveRuleByType(@Request() req, @Param('leaveType') leaveType: string) {
+    const data = await this.leaveRuleService.getLeaveRuleByType(req.user.orgId, leaveType as any);
+    return new ResponseDto(HttpStatus.OK, 'Leave rule retrieved successfully', data);
   }
 
-  @Post('/employees/pending-leaves')
-  findPendingLeavesByEmployees(
-    @Body() body: { employeeIds: number[] },
-  ): Promise<ResponseDto<Leave[]>> {
-    return this.leaveService.findPendingLeavesByEmployees(body.employeeIds);
+  @Delete('rules/:id')
+  @Roles(UserRole.ADMIN)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async deleteLeaveRule(@Request() req, @Param('id', ParseIntPipe) id: number) {
+    await this.leaveRuleService.deleteLeaveRule(id, req.user.orgId);
+    return new ResponseDto(HttpStatus.NO_CONTENT, 'Leave rule deleted successfully', null);
+  }
+
+  @Post('rules/initialize')
+  @Roles(UserRole.ADMIN)
+  async initializeDefaultRules(@Request() req, @Body('location') location: 'India' | 'Qatar') {
+    const data = await this.leaveRuleService.initializeDefaultRules(req.user.orgId, location);
+    return new ResponseDto(HttpStatus.CREATED, 'Default leave rules initialized', data);
+  }
+
+  // ==================== LEAVE APPLICATIONS ====================
+
+  @Post('apply')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER, UserRole.USER)
+  async applyLeave(@Request() req, @Body() dto: ApplyLeaveDto) {
+    const data = await this.leaveService.applyLeave(req.user.employeeId, dto);
+    return new ResponseDto(HttpStatus.CREATED, 'Leave applied successfully', data);
   }
 
   @Put(':id')
-  update(
+  @Roles(UserRole.ADMIN, UserRole.MANAGER, UserRole.USER)
+  async updateLeave(@Request() req, @Param('id', ParseIntPipe) id: number, @Body() dto: UpdateLeaveDto) {
+    const data = await this.leaveService.updateLeave(id, req.user.employeeId, dto);
+    return new ResponseDto(HttpStatus.OK, 'Leave updated successfully', data);
+  }
+
+
+
+  @Put(':id/status')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
+  async approveRejectLeave(
+    @Request() req,
     @Param('id', ParseIntPipe) id: number,
-    @Body() updateLeaveDto: UpdateLeaveDto,
-  ): Promise<ResponseDto<Leave>> {
-    return this.leaveService.updateLeave(id, updateLeaveDto);
+    @Body() dto: ApproveRejectLeaveDto,
+  ) {
+    console.log(id);
+    
+    const data = await this.leaveService.approveRejectLeave(id, req.user.employeeId, dto);
+    return new ResponseDto(HttpStatus.OK, 'Leave status updated successfully', data);
   }
 
   @Delete(':id')
-  remove(@Param('id', ParseIntPipe) id: number): Promise<ResponseDto<void>> {
-    return this.leaveService.deleteLeave(id);
+  @Roles(UserRole.ADMIN, UserRole.MANAGER, UserRole.USER)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async deleteLeave(@Request() req, @Param('id', ParseIntPipe) id: number) {
+    await this.leaveService.deleteLeave(id, req.user.employeeId);
+    return new ResponseDto(HttpStatus.NO_CONTENT, 'Leave deleted successfully', null);
   }
 
-  @Get('/employees/:employeeId')
-  findEmployeeLeaves(
-    @Param('employeeId', ParseIntPipe) employeeId: number,
-  ): Promise<ResponseDto<Leave[]>> {
-    return this.leaveService.findLeaveByEmployee(employeeId);
+  @Get('my-leaves')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER, UserRole.USER)
+  async getMyLeaves(@Request() req, @Query() filter: LeaveFilterDto) {
+    const data = await this.leaveService.getEmployeeLeaves(req.user.employeeId, filter);
+    return new ResponseDto(HttpStatus.OK, 'Your leaves retrieved successfully', data);
   }
 
-  @Get('/rules/:orgId')
-  findLeaveRules(@Param('orgId', ParseIntPipe) orgId: number): Promise<ResponseDto<LeaveRule[]>> {
-    return this.leaveService.findAllRules(orgId);
+  @Get('employee/:employeeId')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
+  async getEmployeeLeaves(@Param('employeeId', ParseIntPipe) employeeId: number, @Query() filter: LeaveFilterDto) {
+    const data = await this.leaveService.getEmployeeLeaves(employeeId, filter);
+    return new ResponseDto(HttpStatus.OK, 'Employee leaves retrieved successfully', data);
+  }
+  @Get('rules/employee/:employeeId')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
+  async getEmployeeLeavesRules(@Param('employeeId', ParseIntPipe) employeeId: number) {
+    const data = await this.leaveService.getEmployeeLeavesRules(employeeId);
+    return new ResponseDto(HttpStatus.OK, 'Employee leaves rules retrieved successfully', data);
   }
 
-  @Get('/rules/employees/:employeeId')
-  findEmployeeLeavesRules(
-    @Param('employeeId', ParseIntPipe) employeeId: number,
-  ): Promise<ResponseDto<EmployeeLeaveRule[]>> {
-    return this.leaveService.findLeaveRulesByEmployee(employeeId);
+  @Get()
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
+  async getAllLeaves(@Query() filter: LeaveFilterDto) {
+    const data = await this.leaveService.getAllLeaves(filter);
+    return new ResponseDto(HttpStatus.OK, 'All leaves retrieved successfully', data);
+  }
+@Get('subordinates')
+@Roles(UserRole.ADMIN, UserRole.MANAGER)
+async getSubordinateLeaves(@Request() req, @Query() filter: LeaveFilterDto) {
+  try {
+    const data = await this.leaveService.getSubordinateLeaves(req.user.employeeId, filter);
+    return new ResponseDto(HttpStatus.OK, 'Subordinate leaves retrieved successfully', data);
+  } catch (error) {
+    return new ResponseDto(
+      HttpStatus.INTERNAL_SERVER_ERROR, 
+      'Failed to retrieve subordinate leaves', 
+      error.message
+    );
+  }
+}
+@Get('my-leave-types/balances')
+@Roles(UserRole.ADMIN, UserRole.MANAGER, UserRole.USER)
+async getMyLeaveTypesWithBalances(@Request() req) {
+  try {
+    const data = await this.leaveService.getLeaveTypesWithBalances(req.user.employeeId);
+    return new ResponseDto(HttpStatus.OK, 'Leave types with balances retrieved successfully', data);
+  } catch (error) {
+    return new ResponseDto(HttpStatus.INTERNAL_SERVER_ERROR, 'Failed to retrieve leave types with balances', error.message);
+  }
+}
+  @Get(':id')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER, UserRole.USER)
+  async getLeaveById(@Param('id', ParseIntPipe) id: number) {
+    const data = await this.leaveService.getLeaveById(id);
+    return new ResponseDto(HttpStatus.OK, 'Leave details retrieved successfully', data);
   }
 
-  @Post('assign-rule/:employeeId/:ruleId')
-  assignRule(
-    @Param('employeeId', ParseIntPipe) employeeId: number,
-    @Param('ruleId', ParseIntPipe) ruleId: number,
-  ): Promise<any> {
-    return this.leaveService.assignLeaveRule(employeeId, ruleId);
+
+
+// Optional: With pagination
+@Get('subordinates/leaves/paginated')
+@Roles(UserRole.ADMIN, UserRole.MANAGER)
+async getSubordinateLeavesWithPagination(
+  @Request() req, 
+  @Query() filter: LeaveFilterDto,
+  @Query('page', ParseIntPipe) page: number = 1,
+  @Query('limit', ParseIntPipe) limit: number = 10,
+) {
+  try {
+    const data = await this.leaveService.getSubordinateLeavesWithDetails(
+      req.user.employeeId, 
+      filter,
+      page,
+      limit
+    );
+    return new ResponseDto(HttpStatus.OK, 'Subordinate leaves retrieved successfully', data);
+  } catch (error) {
+    return new ResponseDto(
+      HttpStatus.INTERNAL_SERVER_ERROR, 
+      'Failed to retrieve subordinate leaves', 
+      error.message
+    );
+  }
+}
+
+  // ==================== REPORTS ====================
+
+  @Get('/balance/employee/:employeeId')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER, UserRole.USER)
+  async getLeaveBalanceEmployee(@Request() req, @Query() filter: LeaveFilterDto) {
+    const data = await this.leaveService.getLeaveBalancesByEmployeeId(req.user.employeeId);
+    return new ResponseDto(HttpStatus.OK, 'Leave details retrieved successfully', data);
   }
 
-  @Delete('unassign-rule/:employeeId/:ruleId')
-  unassignRule(
-    @Param('employeeId', ParseIntPipe) employeeId: number,
-    @Param('ruleId', ParseIntPipe) ruleId: number,
-  ): Promise<any> {
-    return this.leaveService.unassignLeaveRule(employeeId, ruleId);
+  @Get('reports/compliance')
+  @Roles(UserRole.ADMIN)
+  async getComplianceReport(@Request() req, @Query() filter: LeaveFilterDto) {
+    return new ResponseDto(HttpStatus.OK, 'Compliance report fetched successfully', {
+      message: 'Compliance report endpoint (to be implemented)',
+      filter,
+    });
   }
 
-  @Get('balance/employees/:employeeId')
-  findLeaveBalanceByEmp(
-    @Param('employeeId', ParseIntPipe) employeeId: number,
-  ): Promise<ResponseDto<LeaveBalances[]>> {
-    return this.leaveService.findLeaveBalanceByEmp(employeeId);
+  @Get('reports/audit')
+  @Roles(UserRole.ADMIN)
+  async getAuditReport(@Request() req, @Query() filter: LeaveFilterDto) {
+    return new ResponseDto(HttpStatus.OK, 'Audit report fetched successfully', {
+      message: 'Audit report endpoint (to be implemented)',
+      filter,
+    });
   }
 
-  @Put(':id/updateStatus')
-  updateStatus(
-    @Param('id', ParseIntPipe) id: number,
-    @Body() updateLeaveDto: UpdateLeaveDto,
-  ): Promise<ResponseDto<Leave>> {
-    return this.leaveService.updateStatusLeave(id, updateLeaveDto);
-  }
+  
+// ==================== ASSIGN/UNASSIGN LEAVE RULES ====================
 
-  // @Get('/validate-leave-cycle/:employeeId')
-  // validateLeaveCycle(
-  //   @Param('employeeId', ParseIntPipe) employeeId: number,
-  //   @Body() body: { leaveType: string; startDate: string; endDate: string },
-  // ): Promise<ResponseDto<{ isValid: boolean; message?: string }>> {
-  //   return this.leaveService.validateLeaveCycleForEmployee(employeeId, body.leaveType, body.startDate, body.endDate);
-  // }
+@Post('assign-rule/:employeeId/:ruleId')
+@Roles(UserRole.ADMIN, UserRole.MANAGER)
+async assignLeaveRule(
+  @Request() req,
+  @Param('employeeId', ParseIntPipe) employeeId: number,
+  @Param('ruleId', ParseIntPipe) ruleId: number,
+) {
+  try {
+    const data = await this.leaveService.assignLeaveRuleToEmployee(
+      employeeId,
+      ruleId,
+      req.user.orgId
+    );
+    return new ResponseDto(
+      HttpStatus.OK,
+      'Leave rule assigned successfully',
+      data
+    );
+  } catch (error) {
+    return new ResponseDto(
+      HttpStatus.INTERNAL_SERVER_ERROR,
+      'Failed to assign leave rule',
+      error.message
+    );
+  }
+}
+
+@Delete('unassign-rule/:employeeId/:ruleId')
+@Roles(UserRole.ADMIN, UserRole.MANAGER)
+@HttpCode(HttpStatus.OK)
+async unassignLeaveRule(
+  @Request() req,
+  @Param('employeeId', ParseIntPipe) employeeId: number,
+  @Param('ruleId', ParseIntPipe) ruleId: number,
+) {
+  try {
+    await this.leaveService.unassignLeaveRuleFromEmployee(
+      employeeId,
+      ruleId,
+      req.user.orgId
+    );
+    return new ResponseDto(
+      HttpStatus.OK,
+      'Leave rule unassigned successfully',
+      null
+    );
+  } catch (error) {
+    return new ResponseDto(
+      HttpStatus.INTERNAL_SERVER_ERROR,
+      error.message
+    );
+  }
+}
 }

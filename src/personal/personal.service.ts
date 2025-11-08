@@ -16,6 +16,9 @@ import { v4 as uuidv4 } from 'uuid';
 import { Employee } from 'src/entities/employees.entity';
 import { LeaveRule } from 'src/entities/leave-rule.entity';
 import { EmployeeLeaveRule } from 'src/entities/employee-leave-rule.entity';
+import { LeaveService } from 'src/LeaveManagementModule/leave.service';
+import { LeaveFilterDto } from 'src/LeaveManagementModule/dto/create-leave.dto';
+import { LeaveStatus } from 'src/entities/leave.entity';
 
 @Injectable()
 export class PersonalService {
@@ -44,6 +47,8 @@ export class PersonalService {
   @InjectRepository(EmployeeLeaveRule) 
   private employeeLeaveRuleRepository: Repository<EmployeeLeaveRule>,
   private readonly dataSource: DataSource,
+  private leaveService:LeaveService,
+  
 ) {
   this.ensureUploadDirectory();
 }
@@ -211,8 +216,14 @@ export class PersonalService {
                              employee.gender !== updatedEmployee.gender
 
     if(isGenderChanged){
+const filter: LeaveFilterDto ={
+        status: LeaveStatus.APPROVED
+      }
+      const employeeLeave = await this.leaveService.getEmployeeLeaves(employeeId,filter)
+      if(employeeLeave.length===0){
+        await this.reassignLeaveRules(updatedEmployee);
+      }
 
-      await this.reassignLeaveRules(updatedEmployee);
     }
 
     // 2. Update/Create Personal (foreign key by employeeId)
@@ -248,26 +259,29 @@ export class PersonalService {
   }
 }
 async reassignLeaveRules(employee: Employee): Promise<void> {
-  // Remove all existing leave rule assignments for this employee
+   
+  const currentYear = new Date().getFullYear();
+  // Step 1: Remove all existing leave rule assignments for this employee
   await this.employeeLeaveRuleRepository.delete({
-    employee: { id: employee.id }
+    employee: { id: employee.id },
   });
 
-  // Get all active leave rules
+  await this.leaveService.deleteLeaveBalance(employee.id,currentYear)
+
+  // Step 2: Get all active leave rules
   const leaveRules = await this.leaveRuleRepository.find({
-    where: { isActive: true }
+    where: { isActive: true },
   });
 
   let rulesToAssign: LeaveRule[] = [];
 
+  // Step 3: Decide which rules to assign
   if (employee.isProbation) {
     // If on probation, assign only lossOfPay
-    const lossOfPayRule = leaveRules.find(rule => 
-      rule.leaveType === 'lossOfPay'
+    const lossOfPayRule = leaveRules.find(
+      (rule) => rule.leaveType === 'lossOfPay',
     );
-    if (lossOfPayRule) {
-      rulesToAssign = [lossOfPayRule];
-    }
+    if (lossOfPayRule) rulesToAssign = [lossOfPayRule];
   } else {
     // Not on probation
     if (employee.gender === 'female') {
@@ -275,23 +289,41 @@ async reassignLeaveRules(employee: Employee): Promise<void> {
       rulesToAssign = leaveRules;
     } else {
       // Male: assign all except maternity leave
-      rulesToAssign = leaveRules.filter(rule => 
-        rule.leaveType !== 'maternity'
+      rulesToAssign = leaveRules.filter(
+        (rule) => rule.leaveType !== 'maternity',
       );
     }
   }
 
-  // Create new employee leave rule entries
-  const employeeLeaveRules = rulesToAssign.map(rule => {
-    return this.employeeLeaveRuleRepository.create({
+  // Step 4: Create new employee leave rule entries
+  const employeeLeaveRules = rulesToAssign.map((rule) =>
+    this.employeeLeaveRuleRepository.create({
       employee: employee,
       rule: rule,
-      assignedAt: new Date()
-    });
-  });
+      assignedAt: new Date(),
+    }),
+  );
 
-  if (employeeLeaveRules.length > 0) {
-    await this.employeeLeaveRuleRepository.save(employeeLeaveRules);
+  // Step 5: Save the new rules
+  const savedRules = await this.employeeLeaveRuleRepository.save(
+    employeeLeaveRules,
+  );
+
+  // Step 6: Initialize or update leave balances for the current year
+  
+
+  for (const assignedRule of savedRules) {
+    const totalAllowed =
+      assignedRule.customMaxAllowed ??
+      assignedRule.rule.maxAllowed ??
+      0;
+
+    await this.leaveService.initializeLeaveBalance(
+      employee.id,
+      assignedRule.rule.leaveType,
+      currentYear,
+      Number(totalAllowed),
+    );
   }
 }
 async handleUpdateRequest(

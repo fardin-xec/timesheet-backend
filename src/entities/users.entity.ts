@@ -5,8 +5,9 @@ import { Employee } from './employees.entity';
 
 export enum UserRole {
   ADMIN = 'admin',
-  SUPERADMIN = 'superadmin',
-  USER = 'user'
+  MANAGER = 'manager',
+  USER = 'user',
+  SUPERADMIN='superadmin'
 }
 
 @Entity('users')

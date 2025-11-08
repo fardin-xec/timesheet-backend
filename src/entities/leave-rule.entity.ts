@@ -1,6 +1,7 @@
+// src/entities/leave-rule.entity.ts
 import { Entity, Column, PrimaryGeneratedColumn, ManyToOne, JoinColumn, CreateDateColumn, UpdateDateColumn } from 'typeorm';
 import { Organization } from './organizations.entity';
-import {LeaveType}  from './leave.entity'
+import { LeaveType } from './leave.entity';
 import { Gender } from './employees.entity';
 
 @Entity('leave_rules')
@@ -12,26 +13,39 @@ export class LeaveRule {
   @JoinColumn({ name: 'org_id' })
   organization: Organization;
 
-  @Column({name:'leave_type', type: 'enum', enum: LeaveType })
+  @Column({ name: 'leave_type', type: 'enum', enum: LeaveType })
   leaveType: LeaveType;
 
-  @Column({name:'max_allowed', type: 'numeric', precision: 5, scale: 2 })
+  @Column({ name: 'max_allowed', type: 'numeric', precision: 5, scale: 2 })
   maxAllowed: number;
 
-  @Column({name:'carry_forward_max', type: 'numeric', precision: 5, scale: 2, default: 0 })
+  @Column({ name: 'carry_forward_max', type: 'numeric', precision: 5, scale: 2, default: 0 })
   carryForwardMax: number;
 
-  @Column({name:'accrual_rate', type: 'numeric', precision: 5, scale: 2, nullable: true })
+  @Column({ name: 'accrual_rate', type: 'numeric', precision: 5, scale: 2, nullable: true })
   accrualRate: number;
 
-  @Column({name:'is_active', default: true })
+  @Column({ name: 'is_active', default: true })
   isActive: boolean;
 
-  @Column({name:'applicable_gender', type: 'enum', enum: Gender, nullable: true })
+  @Column({ name: 'applicable_gender', type: 'enum', enum: Gender, nullable: true })
   applicableGender: Gender;
 
-  @Column({name:'min_tenure_months', default: 0 })
+  @Column({ name: 'min_tenure_months', default: 0 })
   minTenureMonths: number;
+
+  // New fields for enhanced validation
+  @Column({ name: 'advance_notice_days', default: 0 })
+  advanceNoticeDays: number;
+
+  @Column({ name: 'requires_document', default: false })
+  requiresDocument: boolean;
+
+  @Column({ name: 'max_consecutive_days', nullable: true })
+  maxConsecutiveDays: number;
+
+  @Column({ name: 'allow_half_day', default: true })
+  allowHalfDay: boolean;
 
   @CreateDateColumn()
   createdAt: Date;

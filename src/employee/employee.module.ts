@@ -12,18 +12,20 @@ import { EmailModule } from '../email/email.module'; // Import instead of provid
 import { PayrollModule } from 'src/payroll/payroll.module';
 import { LeaveManagementModule } from 'src/LeaveManagementModule/leave.module';
 import { ScheduleModule } from '@nestjs/schedule';
+import { LeaveRule } from 'src/entities/leave-rule.entity';
+import { EmployeeLeaveRule } from 'src/entities/employee-leave-rule.entity';
 
 @Module({
   imports: [
     ScheduleModule.forRoot(),
-    TypeOrmModule.forFeature([Employee]),
+    TypeOrmModule.forFeature([Employee, LeaveRule,EmployeeLeaveRule]), // Add LeaveRule here
     forwardRef(() => PersonalModule),
     forwardRef(() => BankInfoModule),
     UsersModule,
-    AuditTrailModule, // Add this
-    EmailModule, // Add this
+    AuditTrailModule,
+    EmailModule,
     PayrollModule,
-    LeaveManagementModule
+    LeaveManagementModule,
   ],
   providers: [EmployeeService],
   controllers: [EmployeeController],

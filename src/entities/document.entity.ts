@@ -5,7 +5,8 @@ export enum DocumentType {
   PAN_CARD = 'PAN_CARD',
   PASSPORT = 'PASSPORT',
   CERTIFICATE = 'CERTIFICATE',
-  OTHER = 'OTHER'
+  OTHER = 'OTHER',
+  LEAVE = 'LEAVE'
 }
 
 @Entity('documents')

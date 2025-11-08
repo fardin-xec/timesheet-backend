@@ -18,6 +18,7 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { CheckExistenceDto } from './dto/create-employee.dto';
 import { LeaveRule } from 'src/entities/leave-rule.entity';
 import { EmployeeLeaveRule } from 'src/entities/employee-leave-rule.entity';
+import { LeaveFilterDto } from 'src/LeaveManagementModule/dto/create-leave.dto';
 
 const writeFile = promisify(fs.writeFile);
 const unlink = promisify(fs.unlink);
@@ -168,6 +169,7 @@ export class EmployeeService {
     // Assign leave rules based on gender and probation status
     await this.assignLeaveRules(data);
 
+    //create leave balance
     await this.auditTrailService.logEmployeeCreation(
       data,
       payloadUserId,
@@ -212,7 +214,14 @@ export class EmployeeService {
 
       // Reassign leave rules if isProbation or gender changed
     if (isProbationChanged || isGenderChanged) {
-      await this.reassignLeaveRules(updatedEmployee);
+      const filter: LeaveFilterDto ={
+        status: LeaveStatus.APPROVED
+      }
+      const employeeLeave = await this.leaveService.getEmployeeLeaves(employeeData.id,filter)
+      if(employeeLeave.length===0){
+        await this.reassignLeaveRules(updatedEmployee);
+      }
+
     }
 
        await this.auditTrailService.logEmployeeUpdate(
@@ -228,26 +237,29 @@ export class EmployeeService {
     }
   }
 async reassignLeaveRules(employee: Employee): Promise<void> {
-  // Remove all existing leave rule assignments for this employee
+   
+  const currentYear = new Date().getFullYear();
+  // Step 1: Remove all existing leave rule assignments for this employee
   await this.employeeLeaveRuleRepository.delete({
-    employee: { id: employee.id }
+    employee: { id: employee.id },
   });
 
-  // Get all active leave rules
+  await this.leaveService.deleteLeaveBalance(employee.id,currentYear)
+
+  // Step 2: Get all active leave rules
   const leaveRules = await this.leaveRuleRepository.find({
-    where: { isActive: true }
+    where: { isActive: true },
   });
 
   let rulesToAssign: LeaveRule[] = [];
 
+  // Step 3: Decide which rules to assign
   if (employee.isProbation) {
     // If on probation, assign only lossOfPay
-    const lossOfPayRule = leaveRules.find(rule => 
-      rule.leaveType === 'lossOfPay'
+    const lossOfPayRule = leaveRules.find(
+      (rule) => rule.leaveType === 'lossOfPay',
     );
-    if (lossOfPayRule) {
-      rulesToAssign = [lossOfPayRule];
-    }
+    if (lossOfPayRule) rulesToAssign = [lossOfPayRule];
   } else {
     // Not on probation
     if (employee.gender === 'female') {
@@ -255,41 +267,59 @@ async reassignLeaveRules(employee: Employee): Promise<void> {
       rulesToAssign = leaveRules;
     } else {
       // Male: assign all except maternity leave
-      rulesToAssign = leaveRules.filter(rule => 
-        rule.leaveType !== 'maternity'
+      rulesToAssign = leaveRules.filter(
+        (rule) => rule.leaveType !== 'maternity',
       );
     }
   }
 
-  // Create new employee leave rule entries
-  const employeeLeaveRules = rulesToAssign.map(rule => {
-    return this.employeeLeaveRuleRepository.create({
+  // Step 4: Create new employee leave rule entries
+  const employeeLeaveRules = rulesToAssign.map((rule) =>
+    this.employeeLeaveRuleRepository.create({
       employee: employee,
       rule: rule,
-      assignedAt: new Date()
-    });
-  });
+      assignedAt: new Date(),
+    }),
+  );
 
-  if (employeeLeaveRules.length > 0) {
-    await this.employeeLeaveRuleRepository.save(employeeLeaveRules);
+  // Step 5: Save the new rules
+  const savedRules = await this.employeeLeaveRuleRepository.save(
+    employeeLeaveRules,
+  );
+
+  // Step 6: Initialize or update leave balances for the current year
+  
+
+  for (const assignedRule of savedRules) {
+    const totalAllowed =
+      assignedRule.customMaxAllowed ??
+      assignedRule.rule.maxAllowed ??
+      0;
+
+    await this.leaveService.initializeLeaveBalance(
+      employee.id,
+      assignedRule.rule.leaveType,
+      currentYear,
+      Number(totalAllowed),
+    );
   }
 }
+
   private async assignLeaveRules(employee: Employee): Promise<void> {
-  // Get all leave rules
+  // Step 1: Get all active leave rules
   const leaveRules = await this.leaveRuleRepository.find({
-    where: { isActive: true }
+    where: { isActive: true },
   });
-  
+
   let rulesToAssign: LeaveRule[] = [];
-  
+
+  // Step 2: Filter rules based on employee conditions
   if (employee.isProbation) {
     // If on probation, assign only lossOfPay
-    const lossOfPayRule = leaveRules.find(rule => 
-      rule.leaveType === 'lossOfPay'
+    const lossOfPayRule = leaveRules.find(
+      (rule) => rule.leaveType === 'lossOfPay',
     );
-    if (lossOfPayRule) {
-      rulesToAssign = [lossOfPayRule];
-    }
+    if (lossOfPayRule) rulesToAssign = [lossOfPayRule];
   } else {
     // Not on probation
     if (employee.gender === 'female') {
@@ -297,25 +327,44 @@ async reassignLeaveRules(employee: Employee): Promise<void> {
       rulesToAssign = leaveRules;
     } else {
       // Male: assign all except maternity leave
-      rulesToAssign = leaveRules.filter(rule => 
-        rule.leaveType !== 'maternity'
+      rulesToAssign = leaveRules.filter(
+        (rule) => rule.leaveType !== 'maternity',
       );
     }
   }
-  
-  // Create employee leave rule entries
-  const employeeLeaveRules = rulesToAssign.map(rule => {
-    return this.employeeLeaveRuleRepository.create({
+
+  // Step 3: Create employee leave rule records
+  const employeeLeaveRules = rulesToAssign.map((rule) =>
+    this.employeeLeaveRuleRepository.create({
       employee: employee,
       rule: rule,
-      assignedAt: new Date()
-    });
-  });
+      assignedAt: new Date(),
+    }),
+  );
+
+  // Step 4: Save all employee leave rules
+  const savedRules = await this.employeeLeaveRuleRepository.save(
+    employeeLeaveRules,
+  );
   
-  if (employeeLeaveRules.length > 0) {
-    await this.employeeLeaveRuleRepository.save(employeeLeaveRules);
+  // Step 5: Initialize leave balances for each rule
+  const currentYear = new Date().getFullYear();
+
+  for (const assignedRule of savedRules) {
+    const totalAllowed =
+      assignedRule.rule.maxAllowed ??
+      assignedRule.customMaxAllowed ??
+      0;
+
+    await this.leaveService.initializeLeaveBalance(
+      employee.id,
+      assignedRule.rule.leaveType,
+      currentYear,
+      Number(totalAllowed),
+    );
   }
 }
+
 
   async remove(id: number): Promise<void> {
     const employee = await this.findOne(id);
@@ -682,10 +731,8 @@ async reassignLeaveRules(employee: Employee): Promise<void> {
 
   const roleMap: Record<string, UserRole> = {
     'admin': UserRole.ADMIN,
-    'superadmin': UserRole.SUPERADMIN,
+    'manager': UserRole.MANAGER, // Managers are typically USER role
     'user': UserRole.USER,
-    'manager': UserRole.USER, // Managers are typically USER role
-    'employee': UserRole.USER,
   };
 
   return roleMap[roleLowercase] || UserRole.USER;
