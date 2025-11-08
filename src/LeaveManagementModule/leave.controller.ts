@@ -225,8 +225,9 @@ async getSubordinateLeavesWithPagination(
 
   @Get('/balance/employee/:employeeId')
   @Roles(UserRole.ADMIN, UserRole.MANAGER, UserRole.USER)
-  async getLeaveBalanceEmployee(@Request() req, @Query() filter: LeaveFilterDto) {
-    const data = await this.leaveService.getLeaveBalancesByEmployeeId(req.user.employeeId);
+  async getLeaveBalanceEmployee( @Param('employeeId', ParseIntPipe) employeeId: number,
+) {
+    const data = await this.leaveService.getLeaveBalancesByEmployeeId(employeeId);
     return new ResponseDto(HttpStatus.OK, 'Leave details retrieved successfully', data);
   }
 
