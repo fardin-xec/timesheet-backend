@@ -1,7 +1,7 @@
 // src/services/leave.service.ts
 import { Injectable, BadRequestException, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Between, In } from 'typeorm';
+import { Repository, Between, In, LessThanOrEqual, MoreThanOrEqual } from 'typeorm';
 import { Leave, LeaveType, LeaveStatus } from '../entities/leave.entity';
 import { LeaveRule } from '../entities/leave-rule.entity';
 import { LeaveBalances } from '../entities/leave-balance.entity';
@@ -31,129 +31,152 @@ export class LeaveService {
     private emailService: EmailService,
   ) {}
 
-  async applyLeave(employeeId: number, dto: ApplyLeaveDto): Promise<Leave> {
-    const employee = await this.employeeRepository.findOne({
-      where: { id: employeeId },
-      relations: ['organization', 'manager'],
-    });
+async applyLeave(employeeId: number, dto: ApplyLeaveDto): Promise<Leave> {
+  const employee = await this.employeeRepository.findOne({
+    where: { id: employeeId },
+    relations: ['organization', 'manager'],
+  });
 
-    if (!employee) {
-      throw new NotFoundException('Employee not found');
-    }
-
-    if (employee.status === EmployeeStatus.PENDING_INACTIVE) {
-      throw new BadRequestException('Leave applications are not allowed during notice period');
-    }
-
-    const startDate = new Date(dto.startDate);
-    const endDate = new Date(dto.endDate);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    if (startDate > endDate) {
-      throw new BadRequestException('Start date cannot be after end date');
-    }
-
-    if (startDate < today) {
-      throw new BadRequestException('Cannot apply for past dates');
-    }
-
-    const leaveRule = await this.leaveRuleRepository.findOne({
-      where: {
-        organization: { orgId: employee.orgId },
-        leaveType: dto.leaveType as any,
-        isActive: true,
-      },
-    });
-
-    if (!leaveRule) {
-      throw new BadRequestException(`Leave type ${dto.leaveType} is not configured`);
-    }
-
-    if (dto.leaveType === LeaveType.MATERNITY && employee.gender !== 'female') {
-      throw new BadRequestException('Maternity leave is only applicable for female employees');
-    }
-
-    const tenureMonths = this.calculateTenureMonths(employee.joiningDate);
-    if (tenureMonths < leaveRule.minTenureMonths) {
-      throw new BadRequestException(
-        `Minimum tenure of ${leaveRule.minTenureMonths} months required for ${dto.leaveType} leave`
-      );
-    }
-
-    if (dto.leaveType === LeaveType.CASUAL || dto.leaveType === LeaveType.SICK) {
-      const currentYear = new Date().getFullYear();
-      const endYear = endDate.getFullYear();
-      
-      if (endYear > currentYear) {
-        throw new BadRequestException(
-          `${dto.leaveType.toUpperCase()} leave cannot be applied beyond December 31st of current year`
-        );
-      }
-    }
-
-    if (dto.leaveType === LeaveType.EMERGENCY && !dto.documentId) {
-      throw new BadRequestException('Please upload the supporting document to apply for Emergency Leave');
-    }
-
-    const appliedDays = await this.calculateLeaveDays(
-      startDate,
-      endDate,
-      dto.isHalfDay || false,
-      employee.orgId
-    );
-
-    const currentYear = new Date().getFullYear();
-    let leaveBalance = await this.leaveBalanceRepository.findOne({
-      where: {
-        employee: { id: employeeId },
-        leaveType: dto.leaveType as any,
-        year: currentYear,
-      },
-    });
-
-    if (!leaveBalance) {
-      leaveBalance = await this.initializeLeaveBalance(
-        employeeId,
-        dto.leaveType,
-        currentYear,
-        leaveRule.maxAllowed
-      );
-    }
-
-    const availableBalance = leaveBalance.totalAllowed - leaveBalance.used;
-    
-    if (dto.leaveType !== LeaveType.LOSSOFPAY && appliedDays > availableBalance) {
-      throw new BadRequestException(
-        `Insufficient leave balance. Available: ${availableBalance} days, Requested: ${appliedDays} days`
-      );
-    }
-
-    const leave = this.leaveRepository.create({
-      employeeId,
-      leaveType: dto.leaveType,
-      startDate,
-      endDate,
-      appliedDays,
-      reason: dto.reason,
-      isHalfDay: dto.isHalfDay || false,
-      halfDayType: dto.halfDayType,
-      documentId: dto.documentId,
-      status: LeaveStatus.PENDING,
-    });
-
-    const savedLeave = await this.leaveRepository.save(leave);
-
-    const fullLeave = await this.leaveRepository.findOne({
-      where: { id: savedLeave.id },
-      relations: ['employee', 'employee.manager', 'employee.organization'],
-    });
-
-    await this.sendLeaveApplicationEmail(fullLeave, employee);
-    await this.createAuditLog(employeeId, 'LEAVE_APPLIED', savedLeave.id);
-
-    return fullLeave;
+  if (!employee) {
+    throw new NotFoundException('Employee not found');
   }
+
+  if (employee.status === EmployeeStatus.PENDING_INACTIVE) {
+    throw new BadRequestException('Leave applications are not allowed during notice period');
+  }
+
+  const startDate = new Date(dto.startDate);
+  const endDate = new Date(dto.endDate);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  if (startDate > endDate) {
+    throw new BadRequestException('Start date cannot be after end date');
+  }
+
+  if (startDate < today) {
+    throw new BadRequestException('Cannot apply for past dates');
+  }
+
+  // Check for overlapping leaves
+  const overlappingLeave = await this.leaveRepository.findOne({
+    where: {
+      employeeId,
+      status: In([LeaveStatus.PENDING, LeaveStatus.APPROVED]), // Consider statuses that block new leave
+      startDate: LessThanOrEqual(endDate),
+      endDate: MoreThanOrEqual(startDate),
+    },
+  });
+
+  if (overlappingLeave) {
+    throw new BadRequestException(
+      `Leave already applied from ${startDate.toDateString()} to ${endDate.toDateString()}`
+    );
+  }
+
+  // Continue existing checks...
+  const leaveRule = await this.leaveRuleRepository.findOne({
+    where: {
+      organization: { orgId: employee.orgId },
+      leaveType: dto.leaveType as any,
+      isActive: true,
+    },
+  });
+
+  if (!leaveRule) {
+    throw new BadRequestException(`Leave type ${dto.leaveType} is not configured`);
+  }
+
+  if (dto.leaveType === LeaveType.MATERNITY && employee.gender !== 'female') {
+    throw new BadRequestException('Maternity leave is only applicable for female employees');
+  }
+
+  // const tenureMonths = this.calculateTenureMonths(employee.joiningDate);
+
+  // if (tenureMonths < leaveRule.minTenureMonths) {  // fixed comparison operator
+  //   throw new BadRequestException(
+  //     `Minimum tenure of ${leaveRule.minTenureMonths} months required for ${dto.leaveType} leave`
+  //   );
+  // }
+
+  if (
+    dto.leaveType === LeaveType.CASUAL ||
+    dto.leaveType === LeaveType.SICK ||
+    dto.leaveType === LeaveType.ANNUAL
+  ) {
+    const currentYear = new Date().getFullYear();
+    const endYear = endDate.getFullYear();
+
+    if (endYear > currentYear) {
+      throw new BadRequestException(
+        `${dto.leaveType.toUpperCase()} leave cannot be applied beyond December 31st of current year`
+      );
+    }
+  }
+
+  if (dto.leaveType === LeaveType.EMERGENCY && !dto.documentId) {
+    throw new BadRequestException('Please upload the supporting document to apply for Emergency Leave');
+  }
+
+  const appliedDays = dto.appliedDays;
+
+  const currentYear = new Date().getFullYear();
+  let leaveBalance = await this.leaveBalanceRepository.findOne({
+    where: {
+      employee: { id: employeeId },
+      leaveType: dto.leaveType as any,
+      year: currentYear,
+    },
+  });
+
+  if (!leaveBalance) {
+    leaveBalance = await this.initializeLeaveBalance(
+      employeeId,
+      dto.leaveType,
+      currentYear,
+      leaveRule.maxAllowed
+    );
+  } 
+
+  const availableBalance = leaveBalance.totalAllowed - leaveBalance.used;
+
+  if (dto.leaveType !== LeaveType.LOSSOFPAY && appliedDays > availableBalance) {
+    throw new BadRequestException(
+      `Insufficient leave balance. Available: ${availableBalance} days, Requested: ${appliedDays} days`
+    );
+  }
+
+ 
+  leaveBalance.used =(parseFloat(leaveBalance.used.toString()) + parseFloat(appliedDays.toString()));
+  await this.leaveBalanceRepository.save(leaveBalance);
+  
+
+  const leave = this.leaveRepository.create({
+    employeeId,
+    leaveType: dto.leaveType,
+    startDate,
+    endDate,
+    appliedDays,
+    reason: dto.reason,
+    isHalfDay: dto.isHalfDay || false,
+    halfDayType: dto.halfDayType,
+    documentId: dto.documentId,
+    status: LeaveStatus.PENDING,
+  });
+
+  const savedLeave = await this.leaveRepository.save(leave);
+
+  const fullLeave = await this.leaveRepository.findOne({
+    where: { id: savedLeave.id },
+    relations: ['employee', 'employee.manager', 'employee.organization'],
+  });
+
+  await this.sendLeaveApplicationEmail(fullLeave, employee);
+  await this.createAuditLog(employeeId, 'LEAVE_APPLIED', savedLeave.id);
+
+  return fullLeave;
+}
+
 
   async updateLeave(leaveId: number, employeeId: number, dto: UpdateLeaveDto): Promise<Leave> {
     const leave = await this.leaveRepository.findOne({
@@ -216,6 +239,22 @@ export class LeaveService {
       throw new BadRequestException('Only pending leave applications can be deleted');
     }
 
+    if (leave.status === LeaveStatus.PENDING) {
+      const currentYear = new Date().getFullYear();
+      const leaveBalance = await this.leaveBalanceRepository.findOne({
+        where: {
+          employee: { id: leave.employeeId },
+          leaveType: leave.leaveType as any,
+          year: currentYear,
+        },
+      });
+      if (leaveBalance) {
+        leaveBalance.used = parseFloat(leaveBalance.used.toString()) - parseFloat(leave.appliedDays.toString());
+        await this.leaveBalanceRepository.save(leaveBalance);
+      }
+      
+    }
+
     if (leave.documentId) {
       await this.documnetService.deleteDocument(leave.documentId);
     }
@@ -244,7 +283,7 @@ export class LeaveService {
     leave.approvedBy = approverId;
     leave.rejectionReason = dto.status === LeaveStatus.REJECTED ? dto.remarks : null;
 
-    if (dto.status === LeaveStatus.APPROVED) {
+    if (dto.status === LeaveStatus.REJECTED) {
       const currentYear = new Date().getFullYear();
       const leaveBalance = await this.leaveBalanceRepository.findOne({
         where: {
@@ -253,14 +292,11 @@ export class LeaveService {
           year: currentYear,
         },
       });
-
       if (leaveBalance) {
-        leaveBalance.used = parseFloat(leaveBalance.used.toString()) + parseFloat(leave.appliedDays.toString());
-       
-
-        console.log(leaveBalance);
+        leaveBalance.used = parseFloat(leaveBalance.used.toString()) - parseFloat(leave.appliedDays.toString());
         await this.leaveBalanceRepository.save(leaveBalance);
       }
+      
     }
 
     const updatedLeave = await this.leaveRepository.save(leave);

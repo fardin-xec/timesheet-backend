@@ -29,15 +29,15 @@ export class LeaveBalanceCronService {
    * Runs every year on January 1st at 00:01 AM
    * Cron format: second minute hour day month dayOfWeek
    */
-  @Cron('0 7 20 * * *', {
-    name: 'annual-leave-balance-update',
-    timeZone: 'Asia/Kolkata',
-  })
+  @Cron('0 0 0 1 1 *', {
+  name: 'annual-leave-balance-update',
+  timeZone: 'Asia/Qatar', 
+})
   async handleAnnualLeaveBalanceUpdate() {
     console.log('Starting annual leave balance update...');
     
     try {
-      const currentYear = 2027;
+      const currentYear = new Date().getFullYear();
       const previousYear = currentYear - 1;
 
       // Get all active employees

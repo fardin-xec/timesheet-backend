@@ -25,6 +25,10 @@ export class ApplyLeaveDto {
   @ValidateIf(o => o.isHalfDay === true)
   halfDayType?: HalfDayType;
 
+   @IsNumber()
+  @IsOptional()
+  appliedDays?: number;
+
   @IsString()
   @IsOptional()
   @ValidateIf(o => o.leaveType === LeaveType.EMERGENCY)
