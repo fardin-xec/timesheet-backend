@@ -10,6 +10,7 @@ import { Employee } from '../entities/employees.entity';
 import { Organization } from '../entities/organizations.entity';
 import { EmployeeLeaveRule } from '../entities/employee-leave-rule.entity';
 import { DocumentsModule } from 'src/documents/documents.module';
+import { EmailModule } from 'src/email/email.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { DocumentsModule } from 'src/documents/documents.module';
       EmployeeLeaveRule,
     ]),
     DocumentsModule,
+    EmailModule,
   ],
   controllers: [LeaveController],
   providers: [LeaveService, LeaveRuleService],

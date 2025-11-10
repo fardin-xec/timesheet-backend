@@ -32,6 +32,11 @@ export class ApplyLeaveDto {
 }
 
 export class UpdateLeaveDto {
+
+  @IsEnum(LeaveType)
+  @IsOptional()
+  leaveType: LeaveType;
+
   @IsDateString()
   @IsOptional()
   startDate?: string;

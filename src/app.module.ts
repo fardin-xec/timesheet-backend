@@ -39,6 +39,7 @@ import { AuditTrail } from './entities/audit-trail.entity';
 import { AuditTrailModule } from './audit-trail/audit-trail.module';
 import { Document } from './entities/document.entity';
 import { AttendanceTimeEntry } from './entities/attendanceTimeEntry';
+import { CronModule } from './cron/cron.module';
 
 @Module({
   imports: [
@@ -98,6 +99,7 @@ import { AttendanceTimeEntry } from './entities/attendanceTimeEntry';
     HealthModule,
     DocumentsModule,
     AuditTrailModule,
+    CronModule,
   ],
 })
 export class AppModule {}
