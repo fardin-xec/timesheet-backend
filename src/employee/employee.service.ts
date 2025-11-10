@@ -207,6 +207,20 @@ export class EmployeeService {
         // If it's a URL or existing path, keep it as is
       }
 
+      const user = await this.userService.findOne(employeeData.userId);
+      if(employeeData.designation!=="Junior"&&employeeData.designation!=="C-Level"&&employeeData.designation!=="Mid-level"){
+        
+        if(user.role===UserRole.USER){
+          user.role=UserRole.MANAGER;
+          await this.userService.update(user.id,user);
+        }
+      }else{
+        if(user.role===UserRole.MANAGER){
+          user.role=UserRole.USER;
+          await this.userService.update(user.id,user);
+        }
+      }
+
       // Update employee data
       await this.employeeRepository.update(id, employeeData);
 

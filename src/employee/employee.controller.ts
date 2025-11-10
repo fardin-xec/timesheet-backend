@@ -10,6 +10,7 @@ import { JwtStrategy } from 'src/auth/jwt.strategy';
 import { JwtSecretRequestType } from '@nestjs/jwt';
 import { ApiOperation } from '@nestjs/swagger';
 import { PersonalService } from 'src/personal/personal.service';
+import { UserRole } from 'src/entities/users.entity';
 
 class passwordUpdateDto {
   oldPassword: string;
@@ -123,7 +124,10 @@ export class EmployeeController {
 
       // Step 1: Prepare user data
       const password = createEmployeeDto.firstName+"@12345"; // Hash the password
-      const mappedRole = this.employeeService.mapRoleToUserRole(createEmployeeDto.role);
+      let mappedRole = this.employeeService.mapRoleToUserRole(createEmployeeDto.role);
+      if(createEmployeeDto.designation!=="Junior"&&createEmployeeDto.designation!=="C-Level"&&createEmployeeDto.designation!=="Mid-level"&&mappedRole===UserRole.USER){
+             mappedRole=UserRole.MANAGER;
+      }
       const userData = {
         username: `${createEmployeeDto.firstName} ${createEmployeeDto.lastName}`,
         email: createEmployeeDto.email,
