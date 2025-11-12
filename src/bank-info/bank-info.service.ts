@@ -115,4 +115,16 @@ export class BankInfoService {
       throw new Error(`Failed to delete bank info: ${error.message}`);
     }
   }
+
+  /**
+ * Create bank info with query runner for transaction support
+ */
+async createWithQueryRunner(bankInfoData: any, queryRunner: any): Promise<any> {
+  if (!bankInfoData || Object.keys(bankInfoData).length === 0) {
+    return null;
+  }
+
+  const bankInfo = queryRunner.manager.create(BankInfo, bankInfoData);
+  return await queryRunner.manager.save(BankInfo, bankInfo);
+}
 }

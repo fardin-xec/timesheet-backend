@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Post, Body, Put, Delete, UseGuards, HttpStatus,Request, HttpCode } from '@nestjs/common';
+import { Controller, Get, Param, Post, Body, Put, Delete, UseGuards, HttpStatus,Request, HttpCode, BadRequestException } from '@nestjs/common';
 import { EmployeeService } from './employee.service';
 import { Employee, EmployeeStatus, InactivationReason } from '../entities/employees.entity';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -111,23 +111,144 @@ export class EmployeeController {
     }
     return new ResponseDto(HttpStatus.OK, 'Employee retrieved successfully', data);
   }
-  @UseGuards(JwtAuthGuard)
-  // Access the request object
-  @Post()
-  async create(@Body() createEmployeeDto: Partial<CreateEmployeeDto>, @Request() req: any): Promise<ResponseDto<Employee>> {
-    try {
-         const jwtPayload = req.user; // This contains the decoded token data
+
+
+  // @UseGuards(JwtAuthGuard)
+  // // Access the request object
+  // @Post()
+  // async create(@Body() createEmployeeDto: Partial<CreateEmployeeDto>, @Request() req: any): Promise<ResponseDto<Employee>> {
+  //   try {
+  //        const jwtPayload = req.user; // This contains the decoded token data
 
 
     
    
 
-      // Step 1: Prepare user data
-      const password = createEmployeeDto.firstName+"@12345"; // Hash the password
+  //     // Step 1: Prepare user data
+  //     const password = createEmployeeDto.firstName+"@12345"; // Hash the password
+  //     let mappedRole = this.employeeService.mapRoleToUserRole(createEmployeeDto.role);
+  //     if(createEmployeeDto.designation!=="Junior"&&createEmployeeDto.designation!=="C-Level"&&createEmployeeDto.designation!=="Mid-level"&&mappedRole===UserRole.USER){
+  //            mappedRole=UserRole.MANAGER;
+  //     }
+  //     const userData = {
+  //       username: `${createEmployeeDto.firstName} ${createEmployeeDto.lastName}`,
+  //       email: createEmployeeDto.email,
+  //       password: password,
+  //       role: mappedRole,
+  //       orgId: createEmployeeDto.orgId,
+  //     };
+
+  //     // Step 2: Create the user
+  //     const user = await this.UsersService.create(userData);
+  //     //update employeeId auto generate AT-00XX
+
+  //      // Step 3: Generate employee ID in format AT-XX00
+  //   const lastEmployee = await this.employeeService.findLastEmployee(); // Assume this method gets the last employee
+  //   let newEmployeeId = 'AT-0000';
+  //   if (lastEmployee && lastEmployee.employeeId) {
+  //     const lastIdNumber = parseInt(lastEmployee.employeeId.split('-')[1], 10);
+  //     const newIdNumber = (lastIdNumber + 1).toString().padStart(4, '0');
+  //     newEmployeeId = `AT-${newIdNumber}`;
+  //   }
+  //   console.log(newEmployeeId)
+
+  //    const employeeData: Partial<Employee> = {
+  //       employeeId: newEmployeeId,
+  //       firstName: createEmployeeDto.firstName,
+  //       midName: createEmployeeDto.midName,
+  //       lastName: createEmployeeDto.lastName,
+  //       email: createEmployeeDto.email,
+  //       phone: createEmployeeDto.phone,
+  //       status: createEmployeeDto.status,
+  //       dob: createEmployeeDto.dob ? new Date(createEmployeeDto.dob) : null,
+  //       gender: createEmployeeDto.gender,
+  //       department: createEmployeeDto.department,
+  //       jobTitle: createEmployeeDto.jobTitle,
+  //       designation: createEmployeeDto.designation,
+  //       address: createEmployeeDto.address,
+  //       employmentType: createEmployeeDto.employmentType,
+  //       joiningDate: createEmployeeDto.joiningDate
+  //         ? new Date(createEmployeeDto.joiningDate)
+  //         : new Date(),
+  //       isProbation: createEmployeeDto.isProbation,
+  //       confirmationDate: createEmployeeDto.confirmationDate
+  //         ? new Date(createEmployeeDto.confirmationDate)
+  //         : null,
+  //       ctc: createEmployeeDto.ctc ? parseFloat(createEmployeeDto.ctc) : null,
+  //       currency: createEmployeeDto.currency || 'USD',
+  //       bio: createEmployeeDto.bio,
+  //       userId: user.id,
+  //       orgId: createEmployeeDto.orgId,
+  //       qid: createEmployeeDto.qid,
+  //       qidExpiration:createEmployeeDto.qidExpirationDate ? new Date(createEmployeeDto.qidExpirationDate): new Date(),
+  //       passportNumber:createEmployeeDto.passportNumber,
+  //       passportExpiration:createEmployeeDto.passportValidTill ? new Date(createEmployeeDto.passportValidTill): new Date(),
+  //       reportTo: createEmployeeDto.reportTo,
+  //       workLocation: createEmployeeDto.workLocation,
+  //     };
+
+
+  //   //   // Step 4: Create the employee with the user information
+  //     const data = await this.employeeService.create({
+  //       ...employeeData,
+  //       userId: user.id, // Assuming the user ID is needed to link the employee to the user
+  //       employeeId: newEmployeeId, // Add auto-generated employeeId
+
+  //     },jwtPayload.userId);
+
+  //     // await this.personalService.createEmptyPersonal(data.id);
+
+
+      
+  //       await this.bankInfoService.create({
+  //         employeeId: data.id,
+  //         bankName: createEmployeeDto.bankName,
+  //         accountHolderName: createEmployeeDto.accountHolderName,
+  //         accountNo: createEmployeeDto.accountNumber,
+  //         ifscCode: createEmployeeDto.ifscCode,
+  //         branchName: createEmployeeDto.branchName,
+  //         city: createEmployeeDto.city,
+  //         swiftCode: createEmployeeDto.swiftCode,
+  //         ibanNo: createEmployeeDto.ibanNo,
+  //       });
+      
+
+  //     await this.employeeService.sendWelcomeEmail(data);
+    
+  //     return new ResponseDto(HttpStatus.CREATED, 'Employee created successfully');
+  //   } catch (error) {
+  //     // Handle errors appropriately
+  //     console.error('Error creating employee:', error);
+  //     return new ResponseDto(HttpStatus.INTERNAL_SERVER_ERROR, 'Failed to create employee', null);
+  //   }
+  // }
+  @UseGuards(JwtAuthGuard)
+  @Post()
+  @ApiOperation({ summary: 'Create new employee' })
+  async create(
+    @Body() createEmployeeDto: Partial<CreateEmployeeDto>, 
+    @Request() req: any
+  ): Promise<ResponseDto<any>> {
+    try {
+      const jwtPayload = req.user;
+
+      // Validate required fields
+      this.validateEmployeeData(createEmployeeDto);
+
+      // Prepare user data
+      const password = `${createEmployeeDto.firstName}@12345`;
       let mappedRole = this.employeeService.mapRoleToUserRole(createEmployeeDto.role);
-      if(createEmployeeDto.designation!=="Junior"&&createEmployeeDto.designation!=="C-Level"&&createEmployeeDto.designation!=="Mid-level"&&mappedRole===UserRole.USER){
-             mappedRole=UserRole.MANAGER;
+      
+      // Auto-assign manager role for certain designations
+      if (
+        createEmployeeDto.designation !== "Junior" &&
+        createEmployeeDto.designation !== "C-Level" &&
+        createEmployeeDto.designation !== "Mid-level" &&
+        mappedRole === UserRole.USER
+      ) {
+        mappedRole = UserRole.MANAGER;
       }
+
       const userData = {
         username: `${createEmployeeDto.firstName} ${createEmployeeDto.lastName}`,
         email: createEmployeeDto.email,
@@ -136,28 +257,14 @@ export class EmployeeController {
         orgId: createEmployeeDto.orgId,
       };
 
-      // Step 2: Create the user
-      const user = await this.UsersService.create(userData);
-      //update employeeId auto generate AT-00XX
-
-       // Step 3: Generate employee ID in format AT-XX00
-    const lastEmployee = await this.employeeService.findLastEmployee(); // Assume this method gets the last employee
-    let newEmployeeId = 'AT-0000';
-    if (lastEmployee && lastEmployee.employeeId) {
-      const lastIdNumber = parseInt(lastEmployee.employeeId.split('-')[1], 10);
-      const newIdNumber = (lastIdNumber + 1).toString().padStart(4, '0');
-      newEmployeeId = `AT-${newIdNumber}`;
-    }
-    console.log(newEmployeeId)
-
-     const employeeData: Partial<Employee> = {
-        employeeId: newEmployeeId,
+      // Prepare employee data
+      const employeeData: Partial<Employee> = {
         firstName: createEmployeeDto.firstName,
         midName: createEmployeeDto.midName,
         lastName: createEmployeeDto.lastName,
         email: createEmployeeDto.email,
         phone: createEmployeeDto.phone,
-        status: createEmployeeDto.status,
+        status: createEmployeeDto.status || EmployeeStatus.ACTIVE,
         dob: createEmployeeDto.dob ? new Date(createEmployeeDto.dob) : null,
         gender: createEmployeeDto.gender,
         department: createEmployeeDto.department,
@@ -168,56 +275,66 @@ export class EmployeeController {
         joiningDate: createEmployeeDto.joiningDate
           ? new Date(createEmployeeDto.joiningDate)
           : new Date(),
-        isProbation: createEmployeeDto.isProbation,
+        isProbation: createEmployeeDto.isProbation ?? false,
         confirmationDate: createEmployeeDto.confirmationDate
           ? new Date(createEmployeeDto.confirmationDate)
           : null,
         ctc: createEmployeeDto.ctc ? parseFloat(createEmployeeDto.ctc) : null,
         currency: createEmployeeDto.currency || 'USD',
         bio: createEmployeeDto.bio,
-        userId: user.id,
         orgId: createEmployeeDto.orgId,
         qid: createEmployeeDto.qid,
-        qidExpiration:createEmployeeDto.qidExpirationDate ? new Date(createEmployeeDto.qidExpirationDate): new Date(),
-        passportNumber:createEmployeeDto.passportNumber,
-        passportExpiration:createEmployeeDto.passportValidTill ? new Date(createEmployeeDto.passportValidTill): new Date(),
+        qidExpiration: createEmployeeDto.qidExpirationDate 
+          ? new Date(createEmployeeDto.qidExpirationDate) 
+          : null,
+        passportNumber: createEmployeeDto.passportNumber,
+        passportExpiration: createEmployeeDto.passportValidTill 
+          ? new Date(createEmployeeDto.passportValidTill) 
+          : null,
         reportTo: createEmployeeDto.reportTo,
         workLocation: createEmployeeDto.workLocation,
       };
 
+      // Prepare bank info data
+      const bankInfoData = this.prepareBankInfoData(createEmployeeDto);
 
-    //   // Step 4: Create the employee with the user information
-      const data = await this.employeeService.create({
-        ...employeeData,
-        userId: user.id, // Assuming the user ID is needed to link the employee to the user
-        employeeId: newEmployeeId, // Add auto-generated employeeId
+      // Create employee with transaction
+      const result = await this.employeeService.createEmployeeWithTransaction(
+        employeeData,
+        userData,
+        bankInfoData,
+        jwtPayload.userId,
+      );
 
-      },jwtPayload.userId);
+      // Send welcome email asynchronously (non-blocking)
+      this.employeeService.sendWelcomeEmail(result.employee);
 
-      // await this.personalService.createEmptyPersonal(data.id);
+      console.log(`Employee created successfully: ${result.employee.employeeId}`);
 
-
-      
-        await this.bankInfoService.create({
-          employeeId: data.id,
-          bankName: createEmployeeDto.bankName,
-          accountHolderName: createEmployeeDto.accountHolderName,
-          accountNo: createEmployeeDto.accountNumber,
-          ifscCode: createEmployeeDto.ifscCode,
-          branchName: createEmployeeDto.branchName,
-          city: createEmployeeDto.city,
-          swiftCode: createEmployeeDto.swiftCode,
-          ibanNo: createEmployeeDto.ibanNo,
-        });
-      
-
-      await this.employeeService.sendWelcomeEmail(data);
-    
-      return new ResponseDto(HttpStatus.CREATED, 'Employee created successfully');
+      return new ResponseDto(
+        HttpStatus.CREATED, 
+        'Employee created successfully',
+        {
+          employee: result.employee,
+          message: 'Welcome email will be sent shortly',
+        }
+      );
     } catch (error) {
-      // Handle errors appropriately
       console.error('Error creating employee:', error);
-      return new ResponseDto(HttpStatus.INTERNAL_SERVER_ERROR, 'Failed to create employee', null);
+      
+      if (error instanceof BadRequestException) {
+        return new ResponseDto(
+          HttpStatus.BAD_REQUEST,
+          error.message,
+          null
+        );
+      }
+      
+      return new ResponseDto(
+        HttpStatus.INTERNAL_SERVER_ERROR, 
+        'Failed to create employee. Please try again.',
+        null
+      );
     }
   }
 
@@ -319,6 +436,70 @@ export class EmployeeController {
   })
   async checkExistence(@Body() checkExistenceDto: CheckExistenceDto) {
     return this.employeeService.checkExistence(checkExistenceDto);
+  }
+
+  /**
+   * Validate required employee data
+   */
+  private validateEmployeeData(data: Partial<CreateEmployeeDto>): void {
+    const requiredFields = [
+      'firstName',
+      'lastName',
+      'email',
+      'phone',
+      'orgId',
+      'role',
+    ];
+
+    const missingFields = requiredFields.filter(field => !data[field]);
+
+    if (missingFields.length > 0) {
+      throw new BadRequestException(
+        `Missing required fields: ${missingFields.join(', ')}`
+      );
+    }
+
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(data.email)) {
+      throw new BadRequestException('Invalid email format');
+    }
+
+    // Validate phone format (basic validation)
+    const phoneRegex = /^[+]?[\d\s-()]+$/;
+    if (!phoneRegex.test(data.phone)) {
+      throw new BadRequestException('Invalid phone format');
+    }
+  }
+
+
+  /**
+   * Prepare bank info data from employee DTO
+   */
+  private prepareBankInfoData(createEmployeeDto: Partial<CreateEmployeeDto>): any {
+    const hasBankInfo = 
+      createEmployeeDto.bankName ||
+      createEmployeeDto.accountHolderName ||
+      createEmployeeDto.accountNumber ||
+      createEmployeeDto.ifscCode ||
+      createEmployeeDto.branchName ||
+      createEmployeeDto.swiftCode ||
+      createEmployeeDto.ibanNo;
+
+    if (!hasBankInfo) {
+      return null;
+    }
+
+    return {
+      bankName: createEmployeeDto.bankName,
+      accountHolderName: createEmployeeDto.accountHolderName,
+      accountNo: createEmployeeDto.accountNumber,
+      ifscCode: createEmployeeDto.ifscCode,
+      branchName: createEmployeeDto.branchName,
+      city: createEmployeeDto.city,
+      swiftCode: createEmployeeDto.swiftCode,
+      ibanNo: createEmployeeDto.ibanNo,
+    };
   }
 }
 

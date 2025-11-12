@@ -1,6 +1,6 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, InternalServerErrorException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { Employee, EmployeeStatus, InactivationReason } from '../entities/employees.entity';
 import { PersonalService } from 'src/personal/personal.service';
 import { UsersService } from 'src/user/user.service';
@@ -40,6 +40,8 @@ export class EmployeeService {
     private emailService:EmailService,
     private payrollService: PayrollService,
     private leaveService:LeaveService,
+    private dataSource: DataSource, // Inject DataSource for transaction management
+
 
   ) {
     // Ensure upload directory exists
@@ -160,23 +162,170 @@ export class EmployeeService {
     return this.employeeRepository.findOneBy({ userId: id });
   }
 
-  async create(employeeData: Partial<Employee>,payloadUserId: number): Promise<Employee> {
-    const employee = this.employeeRepository.create(employeeData);
-    
-    
-    const data = await this.employeeRepository.save(employee)
-    console.log(data)
-    // Assign leave rules based on gender and probation status
-    await this.assignLeaveRules(data);
 
-    //create leave balance
-    await this.auditTrailService.logEmployeeCreation(
-      data,
-      payloadUserId,
-    );
-    return data;
+
+  /**
+   * Generate next employee ID
+   */
+  private async generateEmployeeId(): Promise<string> {
+    const lastEmployee = await this.employeeRepository
+      .createQueryBuilder('employee')
+      .orderBy('employee.employeeId', 'DESC')
+      .getOne();
+
+    let newEmployeeId = 'AT-0001';
+    if (lastEmployee && lastEmployee.employeeId) {
+      const lastIdNumber = parseInt(lastEmployee.employeeId.split('-')[1], 10);
+      const newIdNumber = (lastIdNumber + 1).toString().padStart(4, '0');
+      newEmployeeId = `AT-${newIdNumber}`;
+    }
+
+    return newEmployeeId;
   }
 
+  /**
+   * Map role string to UserRole enum
+   */
+  mapRoleToUserRole(role: string): UserRole {
+    const roleLowercase = role.toLowerCase().trim();
+
+    const roleMap: Record<string, UserRole> = {
+      'admin': UserRole.ADMIN,
+      'manager': UserRole.MANAGER,
+      'user': UserRole.USER,
+    };
+
+    return roleMap[roleLowercase] || UserRole.USER;
+  }
+
+  /**
+   * Determine user role based on designation
+   */
+  private determineUserRole(designation: string, baseRole: UserRole): UserRole {
+    const managerDesignations = ['Manager', 'Lead', 'Senior', 'Director', 'VP'];
+    
+    if (managerDesignations.includes(designation) && baseRole === UserRole.USER) {
+      return UserRole.MANAGER;
+    }
+    
+    return baseRole;
+  }
+
+  /**
+   * Create employee with transaction support
+   */
+  async createEmployeeWithTransaction(
+    employeeData: Partial<Employee>,
+    userData: any,
+    bankInfoData: any,
+    payloadUserId: number,
+  ) {
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    try {
+      // Step 1: Validate email and phone uniqueness
+      const existingEmployee = await queryRunner.manager.findOne(Employee, {
+        where: [
+          { email: employeeData.email },
+          { phone: employeeData.phone },
+        ],
+      });
+
+      if (existingEmployee) {
+        throw new BadRequestException('Employee with this email or phone already exists');
+      }
+
+      // Step 2: Generate employee ID
+      const employeeId = await this.generateEmployeeId();
+      employeeData.employeeId = employeeId;
+
+      // Step 3: Determine final user role
+      const finalRole = this.determineUserRole(
+        employeeData.designation as string,
+        userData.role,
+      );
+      userData.role = finalRole;
+
+      // Step 4: Create user account
+      const user = await this.userService.createWithQueryRunner(userData, queryRunner);
+
+      // Step 5: Create employee record
+      employeeData.userId = user.id;
+      const employee = queryRunner.manager.create(Employee, employeeData);
+      const savedEmployee = await queryRunner.manager.save(Employee, employee);
+
+      // Step 6: Create bank information
+      let bankInfo = null;
+      if (bankInfoData && Object.keys(bankInfoData).length > 0) {
+        bankInfoData.employeeId = savedEmployee.id;
+        bankInfo = await this.bankInfoService.createWithQueryRunner(
+          bankInfoData,
+          queryRunner,
+        );
+      }
+
+      // Step 7: Assign leave rules
+      await this.assignLeaveRulesWithQueryRunner(savedEmployee, queryRunner);
+
+      // Step 8: Create audit trail
+      await this.auditTrailService.logEmployeeCreationWithQueryRunner(
+        savedEmployee,
+        payloadUserId,
+        queryRunner,
+      );
+
+      // Commit transaction
+      await queryRunner.commitTransaction();
+
+      return {
+        employee: savedEmployee,
+        user,
+        bankInfo,
+      };
+    } catch (error) {
+      // Rollback transaction on error
+      await queryRunner.rollbackTransaction();
+      console.error('Transaction failed, rolling back:', error);
+      
+      throw new InternalServerErrorException(
+        `Failed to create employee: ${error.message}`,
+      );
+    } finally {
+      // Release query runner
+      await queryRunner.release();
+    }
+  }
+
+    /**
+   * Assign leave rules with query runner
+   */
+  private async assignLeaveRulesWithQueryRunner(
+    employee: Employee,
+    queryRunner: any,
+  ): Promise<void> {
+    const leaveRules = await queryRunner.manager.find(LeaveRule, {
+      where: { isActive: true },
+    });
+
+    let rulesToAssign: LeaveRule[] = [];
+
+    if (employee.isProbation) {
+      const lossOfPayRule = leaveRules.find(
+        (rule) => rule.leaveType === 'lossOfPay',
+      );
+      if (lossOfPayRule) rulesToAssign = [lossOfPayRule];
+    } else {
+      if (employee.gender === 'female') {
+        rulesToAssign = leaveRules;
+      } else {
+        rulesToAssign = leaveRules.filter(
+          (rule) => rule.leaveType !== 'maternity',
+        );
+      }
+    }
+  }
   async update(id: number, employeeData: Partial<Employee>): Promise<Employee> {
     try {
       // Get existing employee data
@@ -740,17 +889,7 @@ async reassignLeaveRules(employee: Employee): Promise<void> {
 
 
 
-  mapRoleToUserRole(role: string): UserRole {
-  const roleLowercase = role.toLowerCase().trim();
 
-  const roleMap: Record<string, UserRole> = {
-    'admin': UserRole.ADMIN,
-    'manager': UserRole.MANAGER, // Managers are typically USER role
-    'user': UserRole.USER,
-  };
-
-  return roleMap[roleLowercase] || UserRole.USER;
-}
 
   async sendWelcomeEmail(employee: Employee): Promise<void> {
     try {
@@ -758,7 +897,10 @@ async reassignLeaveRules(employee: Employee): Promise<void> {
 
       const fs = require('fs');
       const imageBuffer = fs.readFileSync('./uploads/avatars/Auxaitech-01.png');
+
       const base64String = imageBuffer.toString('base64');
+      const mimeType = 'png'; // or detect from file extension
+      const imgSrc = `data:image/${mimeType};base64,${base64String}`;
 
       // Plain text version
       const text = `
@@ -794,7 +936,7 @@ This notification was sent automatically by the HR Management System.
       const html = `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 5px;">
           <div style="display: flex; align-items: center; border-bottom: 1px solid #eee; padding-bottom: 10px; margin-bottom: 20px;">
-           <img src='data:image/png;base64,${base64String}' alt="Company Logo" style="height: 40px; margin-right: 20px;">  
+           <img src='${imgSrc}' alt="Company Logo" style="height: 40px; margin-right: 20px;">  
           <h2 style="color: #333; margin: 0;">Welcome to Our Company!</h2>
           </div>
 
@@ -853,7 +995,7 @@ This notification was sent automatically by the HR Management System.
 
           <div style="background-color: #f5f5f5; padding: 10px; border-radius: 4px; font-size: 12px; color: #666; margin-top: 20px; text-align: center;">
             <p style="margin-bottom: 10px;">This is an automated notification from the HR Management System.</p>
-            <img src='data:image/png;base64,${base64String}' alt="Company Logo" style="height: 30px;">
+            <img src='${imgSrc}' alt="Company Logo" style="height: 30px;">
  
            </div>
         </div>

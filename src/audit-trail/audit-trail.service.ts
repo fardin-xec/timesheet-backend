@@ -213,4 +213,35 @@ export class AuditTrailService {
         throw new NotFoundException(`User with ID ${employeeId} not found`);
       }
     }
+
+    /**
+ * Log employee creation with query runner for transaction support
+ */
+async logEmployeeCreationWithQueryRunner(
+  employee: Employee,
+  userId: number,
+  queryRunner: any,
+): Promise<void> {
+  const auditEntry = queryRunner.manager.create(AuditTrail, {
+    employeeId: employee.id,
+    userId: userId,
+    action: AuditTrailAction.CREATED,
+    entityType: 'Employee',
+    entityId: employee.id,
+    changes: JSON.stringify({
+      new: {
+        employeeId: employee.employeeId,
+        firstName: employee.firstName,
+        lastName: employee.lastName,
+        email: employee.email,
+        department: employee.department,
+        designation: employee.designation,
+        status: employee.status,
+      },
+    }),
+    timestamp: new Date(),
+  });
+
+  await queryRunner.manager.save(AuditTrail, auditEntry);
+}
 }

@@ -180,6 +180,18 @@ export class UsersService {
     }
 }
 
- 
+ /**
+ * Create user with query runner for transaction support
+ */
+async createWithQueryRunner(userData: any, queryRunner: any): Promise<any> {
+  const hashedPassword = await bcrypt.hash(userData.password, 10);
+  
+  const user = queryRunner.manager.create(User, {
+    ...userData,
+    password: hashedPassword,
+  });
+
+  return await queryRunner.manager.save(User, user);
+}
 }
 
