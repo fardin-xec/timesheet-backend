@@ -96,8 +96,8 @@ export class CreateEmployeeDto {
   swiftCode?: string;
 
   @IsOptional()
-  @IsString({ message: 'IBank No code must be a string' })
-  ibankNo?: string;
+  @IsString({ message: 'IBan No code must be a string' })
+  ibanNo?: string;
 
   @IsOptional()
   @Matches(/^[0-9]{9,18}$/, {

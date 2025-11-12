@@ -5,7 +5,7 @@ import {
   InternalServerErrorException 
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource } from 'typeorm';
+import { Repository, DataSource, Not } from 'typeorm';
 import { Personal } from '../entities/personal.entity';
 import { Document, DocumentType } from '../entities/document.entity';
 import { BankInfo } from '../entities/bank-info.entity';
@@ -495,7 +495,9 @@ async handleUpdateRequest(
   const documents = await this.documentRepository.find({
     where: {
       employeeId: employeeId,
-      isDeleted: false
+      isDeleted: false,
+      documentType: Not(DocumentType.LEAVE)
+
     },
     order: { createdAt: 'DESC' }
   });

@@ -40,6 +40,7 @@ import { AuditTrailModule } from './audit-trail/audit-trail.module';
 import { Document } from './entities/document.entity';
 import { AttendanceTimeEntry } from './entities/attendanceTimeEntry';
 import { CronModule } from './cron/cron.module';
+import { Holiday } from './entities/holiday.entity';
 
 @Module({
   imports: [
@@ -78,6 +79,7 @@ import { CronModule } from './cron/cron.module';
         AuditTrail,
         Document,
         AttendanceTimeEntry,
+        Holiday,
       ],
       synchronize: true,
     }),

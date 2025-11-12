@@ -11,6 +11,8 @@ import { Organization } from '../entities/organizations.entity';
 import { EmployeeLeaveRule } from '../entities/employee-leave-rule.entity';
 import { DocumentsModule } from 'src/documents/documents.module';
 import { EmailModule } from 'src/email/email.module';
+import { LeaveValidationService } from './leave-validation.service';
+import { Holiday } from 'src/entities/holiday.entity';
 
 @Module({
   imports: [
@@ -21,12 +23,13 @@ import { EmailModule } from 'src/email/email.module';
       Employee,
       Organization,
       EmployeeLeaveRule,
+      Holiday,
     ]),
     DocumentsModule,
     EmailModule,
   ],
   controllers: [LeaveController],
-  providers: [LeaveService, LeaveRuleService],
-  exports: [LeaveService, LeaveRuleService],
+  providers: [LeaveService, LeaveRuleService,LeaveValidationService],
+  exports: [LeaveService, LeaveRuleService,LeaveValidationService],
 })
 export class LeaveManagementModule {}

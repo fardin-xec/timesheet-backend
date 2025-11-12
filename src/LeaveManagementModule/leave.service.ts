@@ -13,6 +13,7 @@ import * as nodemailer from 'nodemailer';
 import { EmailService } from 'src/email/smtpEmail.service';
 import { existsSync, readFileSync } from 'fs';
 import { basename, extname } from 'path';
+import { LeaveValidationService } from './leave-validation.service';
 
 @Injectable()
 export class LeaveService {
@@ -29,6 +30,7 @@ export class LeaveService {
     private employeeLeaveRuleRepository: Repository<EmployeeLeaveRule>,
     private documnetService: DocumentsService,
     private emailService: EmailService,
+    private leaveValidationService: LeaveValidationService
   ) {}
 
 async applyLeave(employeeId: number, dto: ApplyLeaveDto): Promise<Leave> {
@@ -56,6 +58,14 @@ async applyLeave(employeeId: number, dto: ApplyLeaveDto): Promise<Leave> {
 
   if (startDate < today) {
     throw new BadRequestException('Cannot apply for past dates');
+  }
+
+  const validateDate = await this.leaveValidationService.validateLeaveDates(startDate,endDate,employee.orgId);
+  console.log(validateDate);
+  
+  if(!validateDate.isValid){
+    throw new BadRequestException('Leave dates include weekend days (Friday/Saturday) or Holidays');
+
   }
 
   // Check for overlapping leaves
@@ -1334,4 +1344,181 @@ Decision Date: ${data.decisionDate}
 </html>
     `.trim();
   }
+
+// Update leave.service.ts - Add this method to LeaveService
+async applyLeaveWithValidation(employeeId: number, dto: ApplyLeaveDto): Promise<Leave> {
+  const employee = await this.employeeRepository.findOne({
+    where: { id: employeeId },
+    relations: ['organization', 'manager'],
+  });
+
+  if (!employee) {
+    throw new NotFoundException('Employee not found');
+  }
+
+  if (employee.status === EmployeeStatus.PENDING_INACTIVE) {
+    throw new BadRequestException('Leave applications are not allowed during notice period');
+  }
+
+  const startDate = new Date(dto.startDate);
+  const endDate = new Date(dto.endDate);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  if (startDate > endDate) {
+    throw new BadRequestException('Start date cannot be after end date');
+  }
+
+  if (startDate < today) {
+    throw new BadRequestException('Cannot apply for past dates');
+  }
+
+  // VALIDATE LEAVE DATES FOR WEEKENDS/HOLIDAYS/SANDWICHING
+  const validation = await this.leaveValidationService.validateLeaveDates(
+    startDate,
+    endDate,
+    employee.orgId,
+  );
+
+  if (!validation.isValid) {
+    const errorDetails = [];
+    
+    if (validation.details.hasWeekends) {
+      errorDetails.push(
+        `Leave includes weekend days: ${validation.details.weekendDates
+          .map(d => d.toDateString())
+          .join(', ')}`
+      );
+    }
+    
+    if (validation.details.hasHolidays) {
+      errorDetails.push(
+        `Leave includes holidays: ${validation.details.holidayDates
+          .map(h => `${h.name} (${h.date.toDateString()})`)
+          .join(', ')}`
+      );
+    }
+    
+    if (validation.details.isSandwiching) {
+      errorDetails.push(
+        `Leave is sandwiching non-working days: ${validation.details.sandwichingDates
+          .map(d => d.toDateString())
+          .join(', ')}`
+      );
+    }
+    
+    throw new BadRequestException({
+      message: validation.message,
+      details: errorDetails,
+    });
+  }
+
+  // Check for overlapping leaves
+  const overlappingLeave = await this.leaveRepository.findOne({
+    where: {
+      employeeId,
+      status: In([LeaveStatus.PENDING, LeaveStatus.APPROVED]),
+      startDate: LessThanOrEqual(endDate),
+      endDate: MoreThanOrEqual(startDate),
+    },
+  });
+
+  if (overlappingLeave) {
+    throw new BadRequestException(
+      `Leave already applied from ${startDate.toDateString()} to ${endDate.toDateString()}`
+    );
+  }
+
+  // Get leave rule
+  const leaveRule = await this.leaveRuleRepository.findOne({
+    where: {
+      organization: { orgId: employee.orgId },
+      leaveType: dto.leaveType as any,
+      isActive: true,
+    },
+  });
+
+  if (!leaveRule) {
+    throw new BadRequestException(`Leave type ${dto.leaveType} is not configured`);
+  }
+
+  if (dto.leaveType === LeaveType.MATERNITY && employee.gender !== 'female') {
+    throw new BadRequestException('Maternity leave is only applicable for female employees');
+  }
+
+  if (
+    dto.leaveType === LeaveType.CASUAL ||
+    dto.leaveType === LeaveType.SICK ||
+    dto.leaveType === LeaveType.ANNUAL
+  ) {
+    const currentYear = new Date().getFullYear();
+    const endYear = endDate.getFullYear();
+
+    if (endYear > currentYear) {
+      throw new BadRequestException(
+        `${dto.leaveType.toUpperCase()} leave cannot be applied beyond December 31st of current year`
+      );
+    }
+  }
+
+  if (dto.leaveType === LeaveType.EMERGENCY && !dto.documentId) {
+    throw new BadRequestException('Please upload the supporting document to apply for Emergency Leave');
+  }
+
+  const appliedDays = dto.appliedDays;
+  const currentYear = new Date().getFullYear();
+  
+  let leaveBalance = await this.leaveBalanceRepository.findOne({
+    where: {
+      employee: { id: employeeId },
+      leaveType: dto.leaveType as any,
+      year: currentYear,
+    },
+  });
+
+  if (!leaveBalance) {
+    leaveBalance = await this.initializeLeaveBalance(
+      employeeId,
+      dto.leaveType,
+      currentYear,
+      leaveRule.maxAllowed
+    );
+  }
+
+  const availableBalance = leaveBalance.totalAllowed - leaveBalance.used;
+
+  if (dto.leaveType !== LeaveType.LOSSOFPAY && appliedDays > availableBalance) {
+    throw new BadRequestException(
+      `Insufficient leave balance. Available: ${availableBalance} days, Requested: ${appliedDays} days`
+    );
+  }
+
+  leaveBalance.used = parseFloat(leaveBalance.used.toString()) + parseFloat(appliedDays.toString());
+  await this.leaveBalanceRepository.save(leaveBalance);
+
+  const leave = this.leaveRepository.create({
+    employeeId,
+    leaveType: dto.leaveType,
+    startDate,
+    endDate,
+    appliedDays,
+    reason: dto.reason,
+    isHalfDay: dto.isHalfDay || false,
+    halfDayType: dto.halfDayType,
+    documentId: dto.documentId,
+    status: LeaveStatus.PENDING,
+  });
+
+  const savedLeave = await this.leaveRepository.save(leave);
+
+  const fullLeave = await this.leaveRepository.findOne({
+    where: { id: savedLeave.id },
+    relations: ['employee', 'employee.manager', 'employee.organization'],
+  });
+
+  await this.sendLeaveApplicationEmail(fullLeave, employee);
+  await this.createAuditLog(employeeId, 'LEAVE_APPLIED', savedLeave.id);
+
+  return fullLeave;
+}
 }

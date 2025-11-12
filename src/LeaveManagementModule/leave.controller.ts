@@ -31,6 +31,7 @@ import { RolesGuard } from '../guards/roles.guard';
 import { Roles } from '../decorators/roles.decorator';
 import { UserRole } from '../entities/users.entity';
 import { ResponseDto } from '../dto/response.dto';
+import { LeaveValidationService } from './leave-validation.service';
 
 @Controller('leaves')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -38,6 +39,8 @@ export class LeaveController {
   constructor(
     private readonly leaveService: LeaveService,
     private readonly leaveRuleService: LeaveRuleService,
+    private readonly leaveValidationService: LeaveValidationService
+    
   ) {}
 
   // ==================== LEAVE RULES ====================
@@ -302,6 +305,89 @@ async unassignLeaveRule(
     return new ResponseDto(
       HttpStatus.INTERNAL_SERVER_ERROR,
       error.message
+    );
+  }
+}
+// @Get('validate-dates')
+// @Roles(UserRole.ADMIN, UserRole.MANAGER, UserRole.USER)
+// async validateLeaveDates(
+//   @Request() req,
+//   @Query('startDate') startDate: string,
+//   @Query('endDate') endDate: string,
+// ) {
+//   try {
+//     const validation = await this.leaveValidationService.validateLeaveDates(
+//       new Date(startDate),
+//       new Date(endDate),
+//       req.user.orgId,
+//     );
+//     return new ResponseDto(
+//       HttpStatus.OK,
+//       validation.isValid ? 'Dates are valid' : validation.message,
+//       validation,
+//     );
+//   } catch (error) {
+//     return new ResponseDto(
+//       HttpStatus.INTERNAL_SERVER_ERROR,
+//       'Failed to validate dates',
+//       error.message,
+//     );
+//   }
+// }
+
+@Get('holidays')
+@Roles(UserRole.ADMIN, UserRole.MANAGER, UserRole.USER)
+async getHolidays(@Request() req, @Query('year') year?: number) {
+  try {
+    const holidays = await this.leaveValidationService.getHolidays(
+      req.user.orgId,
+      year ? parseInt(year.toString()) : undefined,
+    );
+    return new ResponseDto(HttpStatus.OK, 'Holidays retrieved successfully', holidays);
+  } catch (error) {
+    return new ResponseDto(
+      HttpStatus.INTERNAL_SERVER_ERROR,
+      'Failed to retrieve holidays',
+      error.message,
+    );
+  }
+}
+
+@Post('holidays')
+@Roles(UserRole.ADMIN)
+async createHoliday(
+  @Request() req,
+  @Body() dto: { name: string; date: string; description?: string },
+) {
+  try {
+    const holiday = await this.leaveValidationService.createHoliday(
+      req.user.orgId,
+      dto.name,
+      new Date(dto.date),
+      dto.description,
+    );
+    return new ResponseDto(HttpStatus.CREATED, 'Holiday created successfully', holiday);
+  } catch (error) {
+    return new ResponseDto(
+      HttpStatus.INTERNAL_SERVER_ERROR,
+      'Failed to create holiday',
+      error.message,
+    );
+  }
+}
+
+@Delete('holidays/:id')
+@Roles(UserRole.ADMIN)
+@HttpCode(HttpStatus.NO_CONTENT)
+async deleteHoliday(@Request() req, @Param('id', ParseIntPipe) id: number) {
+  try {
+    await this.leaveValidationService.deleteHoliday(id, req.user.orgId);
+    return new ResponseDto(HttpStatus.NO_CONTENT, 'Holiday deleted successfully', null);
+  } catch (error) {
+    return new ResponseDto(
+      HttpStatus.INTERNAL_SERVER_ERROR,
+      'Failed to delete holiday',
+      error.message,
     );
   }
 }

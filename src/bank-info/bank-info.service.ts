@@ -31,7 +31,7 @@ export class BankInfoService {
       accountNo: BankInfo.accountNo,
       employeeId:BankInfo.employeeId,
       swiftCode: BankInfo.swiftCode,
-      ibankNo: BankInfo.ibankNo,
+      ibanNo: BankInfo.ibanNo,
     };
     
     

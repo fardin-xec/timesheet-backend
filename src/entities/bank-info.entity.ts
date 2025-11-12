@@ -28,8 +28,8 @@ export class BankInfo {
   @Column({ name: 'swift_code', length: 11, nullable: true })
   swiftCode: string;
 
-  @Column({ name: 'ibankNo', length: 34, nullable: true })
-  ibankNo: string;
+  @Column({ name: 'ibanNo', length: 34, nullable: true })
+  ibanNo: string;
 
   @Column({ name: 'account_no', length: 50 , nullable: true })
   accountNo: string;

@@ -207,7 +207,7 @@ export class EmployeeController {
           branchName: createEmployeeDto.branchName,
           city: createEmployeeDto.city,
           swiftCode: createEmployeeDto.swiftCode,
-          ibankNo: createEmployeeDto.ibankNo,
+          ibanNo: createEmployeeDto.ibanNo,
         });
       
 

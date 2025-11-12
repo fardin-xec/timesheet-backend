@@ -96,3 +96,16 @@ export class LeaveFilterDto {
   @IsOptional()
   endDate?: string;
 }
+
+export class LeaveDateValidationDto {
+  isValid: boolean;
+  message: string;
+  details: {
+    hasWeekends: boolean;
+    hasHolidays: boolean;
+    isSandwiching: boolean;
+    weekendDates?: Date[];
+    holidayDates?: { date: Date; name: string }[];
+    sandwichingDates?: Date[];
+  };
+}
